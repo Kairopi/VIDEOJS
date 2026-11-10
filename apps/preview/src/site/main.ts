@@ -118,6 +118,11 @@ async function paintHero(film: Film, rise: boolean): Promise<void> {
   if (!print) return;
   heroModel = model;
   hero.style.setProperty('--hero-accent', accent(model, model.signature()));
+  // The console's "follows the film" swatch shows this film's scene colours; the section bar wears its signature.
+  const stops = model.scenes.map((s) => accent(model, s.face));
+  if (stops.length > 1) $('.console').style.setProperty('--film-swatch', `conic-gradient(${[...stops, stops[0]].join(', ')})`);
+  $('.dock').style.setProperty('--dock-chip', accent(model, model.signature()));
+  startIdle();
 
   if (!rise || calm() || !heroCanvas.width) {
     draw(heroCanvas, print);
@@ -187,11 +192,50 @@ function pointAt(clientX: number): void {
 
 const onFilmArea = (e: PointerEvent) => !(e.target as Element).closest('.hero-side, a');
 hero.addEventListener('pointermove', (e) => {
+  lastTouch = performance.now();
   if (onFilmArea(e) || e.pointerType === 'touch') pointAt(e.clientX);
   else delete hero.dataset.looking;
 });
-hero.addEventListener('pointerdown', (e) => { if (onFilmArea(e)) pointAt(e.clientX); });
-hero.addEventListener('pointerleave', () => delete hero.dataset.looking);
+hero.addEventListener('pointerdown', (e) => {
+  lastTouch = performance.now();
+  if (onFilmArea(e)) pointAt(e.clientX);
+});
+hero.addEventListener('pointerleave', () => {
+  lastTouch = performance.now();
+  delete hero.dataset.looking;
+});
+
+// Until someone moves across the film, the lens wanders through it on its own, so the first
+// second already shows what the hero does. It stops the moment a pointer arrives, waits a few
+// seconds after it leaves, and never runs with reduced motion or off screen.
+const IDLE_AFTER_MS = 3500;
+let lastTouch = -Infinity;
+let idleRaf = 0;
+let idleStart = 0;
+let heroOnScreen = true;
+function idle(now: number): void {
+  idleRaf = 0;
+  if (calm() || !heroOnScreen || document.hidden || !heroModel) return;
+  idleRaf = requestAnimationFrame(idle);
+  if (now - lastTouch < IDLE_AFTER_MS) return;
+  if (!idleStart) idleStart = now;
+  const t = (now - idleStart) / 1000;
+  const width = heroFilm.clientWidth;
+  // Two slow waves, so the path through the film never looks like a metronome.
+  const p = 0.5 - 0.36 * Math.cos(t * 0.21) + 0.06 * Math.sin(t * 0.53);
+  lensTarget = Math.max(0, Math.min(width, p * width));
+  // Glide in from wherever the lens last was rather than jumping.
+  hero.dataset.looking = '';
+  if (!lensRaf) lensRaf = requestAnimationFrame(moveLens);
+}
+function startIdle(): void {
+  if (!idleRaf) idleRaf = requestAnimationFrame(idle);
+}
+new IntersectionObserver(([entry]) => {
+  heroOnScreen = !!entry?.isIntersecting;
+  if (heroOnScreen) startIdle();
+}).observe(hero);
+document.addEventListener('visibilitychange', startIdle);
 hero.addEventListener('click', (e) => {
   if (!onFilmArea(e as PointerEvent) || !heroModel) return;
   const r = heroFilm.getBoundingClientRect();
@@ -226,6 +270,18 @@ const heroButtons = FILMS.map((film) => {
   return { film, button: b, canvas: b.querySelector('canvas')! };
 });
 
+// The same choice again beside the player's title, so switching films never needs a scroll.
+const pickButtons = FILMS.map((film) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pick';
+  b.innerHTML = '<canvas aria-hidden="true"></canvas><span></span>';
+  b.querySelector('span')!.textContent = film.title;
+  b.addEventListener('click', () => select(film));
+  $('.films-pick').append(b);
+  return { film, button: b, canvas: b.querySelector('canvas')! };
+});
+
 const wallBands = FILMS.map((film) => {
   const li = document.createElement('li');
   li.innerHTML = `
@@ -253,9 +309,11 @@ async function paintChoices(): Promise<void> {
     FILMS.map(async (film) => {
       const model = await modelFor(film).catch(() => null);
       if (!model || model.status !== 'ready') return;
-      const hb = heroButtons.find((b) => b.film === film)!;
-      const s1 = sizeOf(hb.canvas);
-      draw(hb.canvas, model.print(s1.w, s1.h, LIT));
+      for (const list of [heroButtons, pickButtons]) {
+        const b = list.find((x) => x.film === film)!;
+        const s = sizeOf(b.canvas);
+        draw(b.canvas, model.print(s.w, s.h, LIT));
+      }
       const band = wallBands.find((b) => b.film === film)!;
       const s2 = sizeOf(band.canvas);
       draw(band.canvas, model.print(s2.w, s2.h, LIT));
@@ -266,7 +324,7 @@ async function paintChoices(): Promise<void> {
 }
 
 function syncChoice(): void {
-  for (const b of heroButtons) b.button.setAttribute('aria-pressed', String(b.film === current));
+  for (const b of [...heroButtons, ...pickButtons]) b.button.setAttribute('aria-pressed', String(b.film === current));
   for (const b of wallBands) {
     b.button.toggleAttribute('data-current', b.film === current);
     if (b.film === current) b.button.setAttribute('aria-current', 'true');
@@ -368,10 +426,29 @@ async function setLanguage(lang: string): Promise<void> {
 }
 registerI18n('en', tintTranslations.en as never);
 
-const test = $<HTMLFormElement>('.test');
+const test = $<HTMLFormElement>('.console');
+const langButton = $<HTMLButtonElement>('[popovertarget="lang-menu"]');
+const langMenu = $('#lang-menu');
+const LANG_NAMES: Record<string, string> = { en: 'English', fr: 'Français', ja: '日本語', ar: 'العربية' };
+
+// Open the language menu next to its button: below if it fits, otherwise above.
+langMenu.addEventListener('toggle', (event) => {
+  const open = (event as ToggleEvent).newState === 'open';
+  langButton.setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  const b = langButton.getBoundingClientRect();
+  const m = langMenu.getBoundingClientRect();
+  const below = b.bottom + 8 + m.height <= window.innerHeight;
+  langMenu.style.top = `${below ? b.bottom + 8 : b.top - 8 - m.height}px`;
+  langMenu.style.left = `${Math.max(12, Math.min(window.innerWidth - m.width - 12, b.left + b.width / 2 - m.width / 2))}px`;
+  langMenu.querySelector<HTMLInputElement>('input:checked')?.focus();
+});
+window.addEventListener('scroll', () => langMenu.matches(':popover-open') && langMenu.hidePopover(), { passive: true });
+langButton.setAttribute('aria-expanded', 'false');
+
 test.addEventListener('change', (event) => {
   const input = event.target as HTMLInputElement;
-  const value = input.value;
+  const value = input.type === 'checkbox' && !input.checked ? '' : input.value;
   const root = document.documentElement;
   switch (input.name) {
     case 'page':
@@ -396,11 +473,32 @@ test.addEventListener('change', (event) => {
       if (value === 'brand') frame.style.setProperty('--media-accent-color', BRAND);
       else frame.style.removeProperty('--media-accent-color');
       break;
-    case 'lang':
+    case 'lang': {
       void setLanguage(value);
+      const name = LANG_NAMES[value] ?? value;
+      const now = langButton.querySelector('.lang-now')!;
+      now.textContent = name;
+      now.setAttribute('lang', value);
+      langButton.setAttribute('aria-label', `Player language: ${name}`);
+      // Close once a language is picked with a click or tap; arrow keys keep the menu open to browse.
+      if (event.isTrusted && !keyboardPick) {
+        langMenu.hidePopover();
+        langButton.focus();
+      }
       break;
+    }
   }
 });
+let keyboardPick = false;
+langMenu.addEventListener('keydown', (e) => {
+  keyboardPick = e.key.startsWith('Arrow');
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    langMenu.hidePopover();
+    langButton.focus();
+  }
+});
+langMenu.addEventListener('pointerdown', () => (keyboardPick = false));
 test.addEventListener('submit', (e) => e.preventDefault());
 
 // ---------------------------------------------------------------- Copy the snippet
@@ -415,6 +513,33 @@ copy.addEventListener('click', async () => {
   }
   window.setTimeout(() => (copy.textContent = 'Copy'), 1600);
 });
+
+// ---------------------------------------------------------------- The section bar
+
+const dock = $('.dock');
+new IntersectionObserver(([entry]) => {
+  // Show the bar once most of the hero has scrolled away; the hero has its own links.
+  if (entry && entry.intersectionRatio < 0.2) dock.dataset.on = '';
+  else delete dock.dataset.on;
+}, { threshold: [0, 0.2, 0.4] }).observe(hero);
+
+const dockLinks = [...document.querySelectorAll<HTMLAnchorElement>('.dock-links a')];
+const sectionObserver = new IntersectionObserver(
+  (entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      for (const a of dockLinks) {
+        if (a.hash === `#${entry.target.id}`) a.setAttribute('aria-current', 'true');
+        else a.removeAttribute('aria-current');
+      }
+    }
+  },
+  { rootMargin: '-45% 0px -50% 0px' }
+);
+for (const a of dockLinks) {
+  const section = document.querySelector(a.hash);
+  if (section) sectionObserver.observe(section);
+}
 
 // ---------------------------------------------------------------- Start
 
