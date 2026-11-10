@@ -72,6 +72,25 @@
     }
   }
 
+  /* The same calm, asked for by the page: data-tint-motion="reduce" on any ancestor. */
+  [data-tint-motion='reduce'] .media-skin[data-theme='tint'] {
+    --tint-duration-press: 0ms;
+    --tint-duration-fast: 0ms;
+    --tint-duration: 0ms;
+    --tint-duration-fold: 0ms;
+    --tint-color-duration: 0ms !important;
+    --media-duration-fast: var(--media-duration-instant);
+    --media-duration: var(--media-duration-instant);
+    --media-duration-slow: var(--media-duration-instant);
+    --media-duration-slower: var(--media-duration-instant);
+    --media-duration-controls: var(--media-duration-instant);
+    --media-duration-dialog: var(--media-duration-instant);
+    --media-duration-indicator: var(--media-duration-instant);
+    --media-duration-menu: 0ms;
+    --media-duration-slider: 0ms;
+    --media-spinner-animation: none;
+  }
+
   @media (prefers-contrast: more) {
     .media-skin[data-theme='tint'] {
       --tint-accent: var(--media-accent-color, #fff);
@@ -81,10 +100,27 @@
     }
   }
 
+  /* More contrast, asked for by the page: data-tint-contrast="more" on any ancestor. */
+  [data-tint-contrast='more'] .media-skin[data-theme='tint'] {
+    --tint-accent: var(--media-accent-color, #fff);
+    --tint-on-accent: var(--media-accent-text-color, #000);
+    --tint-ink-2: var(--tint-ink);
+    --tint-hairline: oklch(1 0 0 / 0.4);
+    --tint-surface-glass: var(--tint-surface);
+    --media-popover: var(--tint-surface);
+  }
+
   @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
     .media-skin[data-theme='tint'] {
       --tint-surface-glass: var(--tint-surface);
       --media-popover: var(--tint-surface);
+    }
+  }
+
+  /* Text on the accent picks black or white, so a brand colour set with --media-accent-color stays readable. */
+  @supports (color: contrast-color(red)) {
+    .media-skin[data-theme='tint'] {
+      --tint-on-accent: var(--media-accent-text-color, contrast-color(var(--tint-accent)));
     }
   }
 
@@ -473,6 +509,7 @@
     @media (prefers-reduced-motion: reduce) {
       .tint-sweep[data-visible] { animation: none; background: oklch(1 0 0 / 0.2); }
     }
+    :where([data-tint-motion='reduce']) .tint-sweep[data-visible] { animation: none; background: oklch(1 0 0 / 0.2); }
 
     .tint-head {
       position: absolute;
@@ -784,6 +821,9 @@
     @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
       .tint-menu { -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0 0 0 1px var(--tint-ink); }
     }
+    :where([data-tint-contrast='more']) .tint-menu { -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0 0 0 1px var(--tint-ink); }
+    :where([data-tint-contrast='more']) .tint-scrim { background: linear-gradient(to top, var(--tint-surface) 50%, transparent); }
+    :where([data-tint-contrast='more']) .tint-time-separator, :where([data-tint-contrast='more']) .tint-time-duration { color: var(--tint-ink); }
     @media (forced-colors: active) { .tint-menu { border: 1px solid CanvasText; } }
 
     .tint-menu-content {

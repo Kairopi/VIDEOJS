@@ -5,7 +5,7 @@ import skinTemplate from '@/video/skin.html?raw';
 
 // What the preview plays. Mux derives the poster and the storyboard (thumbnails track) from the playback ID;
 // Tint reads that storyboard to build the fingerprint. Sprite Fright © Blender Foundation, CC BY 4.0.
-const PLAYBACK_ID = 'VZtzUzGRv02OhRnZCxcNg49OilvolTqdnFLEqBsTwaxU';
+const PLAYBACK_ID = 'U3LiBMyOo4VN5Wo7tizr29nBMpI8ihbIdG4v1500eq5E';
 const SRC = `https://stream.mux.com/${PLAYBACK_ID}.m3u8`;
 const TITLE = 'Sprite Fright';
 

@@ -23,7 +23,9 @@ const STAGGER_MS = 4;
 
 type TintState = 'poster' | 'folding' | 'playing' | 'unfolding' | 'ended' | 'error';
 
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** The system setting, or a page that asks for calm with `data-tint-motion="reduce"` on any ancestor. */
+const reducedMotion = (el: Element) =>
+  matchMedia('(prefers-reduced-motion: reduce)').matches || Boolean(el.closest('[data-tint-motion="reduce"]'));
 const dpr = () => Math.min(2, window.devicePixelRatio || 1);
 
 function containerOf(el: Element): HTMLElement | null {
@@ -171,7 +173,7 @@ export class TintPrintElement extends UIElement {
     if (prev === 'unfolding' && target === 'ended') return;
 
     window.clearTimeout(this.#foldTimer);
-    const canAnimate = prev !== null && !reducedMotion() && this.#model?.status === 'ready' && this.#printUrl;
+    const canAnimate = prev !== null && !reducedMotion(this) && this.#model?.status === 'ready' && this.#printUrl;
 
     if (canAnimate && (prev === 'poster' || prev === 'ended') && target === 'playing') {
       this.#runFold('in');

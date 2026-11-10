@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tint: a Video.js player that wears the film's colours</title>
     <meta name="description" content="An open-source Video.js v10 skin. The film's colour fingerprint becomes the poster and the timeline, and the scene you're watching colours the controls." />
-    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="theme-color" content="#0b0b0c" />
     <meta property="og:title" content="Tint" />
     <meta property="og:description" content="A Video.js player that wears the film's colours." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -15,11 +15,12 @@
     <link rel="preconnect" href="https://stream.mux.com" crossorigin />
   </head>
   <body>
-    <a class="skip" href="#player">Skip to the player</a>
+    <a class="skip" href="#watch">Skip to the player</a>
 
     <header class="top">
-      <a class="top-mark" href="#top" aria-label="Tint, top of page">Tint</a>
+      <a class="top-mark" href="#top">Tint</a>
       <nav class="top-nav" aria-label="Sections">
+        <a href="#test">Test it</a>
         <a href="#how">How it works</a>
         <a href="#install">Use it</a>
         <a href="https://github.com/Kairopi/VIDEOJS">GitHub</a>
@@ -27,32 +28,107 @@
     </header>
 
     <main id="top">
+      <!-- Hero: the current film's fingerprint, full screen. Move across it to see each moment. -->
       <section class="hero" aria-labelledby="mark">
-        <h1 class="mark" id="mark">
-          <span class="mark-layer" data-layer="0">Tint</span>
-          <span class="mark-layer" data-layer="1" aria-hidden="true">Tint</span>
-        </h1>
-        <p class="hero-line">A Video.js player that wears the film's colours.</p>
+        <div class="hero-film" aria-hidden="true">
+          <canvas class="hero-print"></canvas>
+          <div class="hero-rise"></div>
+          <div class="hero-light"></div>
+          <div class="hero-lens">
+            <span class="hero-lens-line"></span>
+            <span class="hero-lens-card">
+              <span class="hero-lens-frame"></span>
+              <span class="hero-lens-meta"><span class="hero-lens-scene"></span><span class="hero-lens-time"></span></span>
+            </span>
+          </div>
+        </div>
+        <div class="hero-shade" aria-hidden="true"></div>
+
+        <div class="hero-copy">
+          <h1 class="mark" id="mark">Tint</h1>
+          <p class="hero-line">A Video.js player that wears the film's colours.</p>
+        </div>
+
+        <div class="hero-side">
+          <p class="hero-hint"><span class="hint-pointer">Move across the film to see its moments. Click to watch from there.</span><span class="hint-touch">Drag across the film to see its moments. Tap to watch from there.</span></p>
+          <div class="films" role="group" aria-label="Choose a film"></div>
+        </div>
       </section>
 
-      <section class="stage" aria-label="Player">
-        <div class="player" id="player" tabindex="-1"></div>
-        <div class="shelf-head">
-          <h2>Choose a film</h2>
-          <p class="shelf-note">Each card is the film's own fingerprint.</p>
+      <!-- The player and a panel to test it. -->
+      <section class="watch" id="watch" aria-labelledby="watch-title">
+        <div class="watch-head">
+          <h2 id="watch-title"><span class="watch-label">Now playing</span> <span class="watch-film"></span></h2>
+          <p class="watch-line"></p>
         </div>
-        <ul class="shelf" aria-label="Films"></ul>
+        <div class="player-frame">
+          <div class="player" id="player"></div>
+        </div>
+
+        <form class="test" id="test" aria-labelledby="test-title">
+          <h3 id="test-title" class="test-title">Test it</h3>
+          <fieldset class="seg">
+            <legend>Page</legend>
+            <label><input type="radio" name="page" value="dark" checked /><span>Dark</span></label>
+            <label><input type="radio" name="page" value="light" /><span>Light</span></label>
+          </fieldset>
+          <fieldset class="seg">
+            <legend>Size</legend>
+            <label><input type="radio" name="size" value="phone" /><span>Phone</span></label>
+            <label><input type="radio" name="size" value="tablet" /><span>Tablet</span></label>
+            <label><input type="radio" name="size" value="full" checked /><span>Full</span></label>
+          </fieldset>
+          <fieldset class="seg">
+            <legend>Shape</legend>
+            <label><input type="radio" name="shape" value="2.39 / 1" checked /><span>2.39:1</span></label>
+            <label><input type="radio" name="shape" value="16 / 9" /><span>16:9</span></label>
+            <label><input type="radio" name="shape" value="1 / 1" /><span>1:1</span></label>
+            <label><input type="radio" name="shape" value="9 / 16" /><span>9:16</span></label>
+          </fieldset>
+          <fieldset class="seg">
+            <legend>Motion</legend>
+            <label><input type="radio" name="motion" value="full" checked /><span>Full</span></label>
+            <label><input type="radio" name="motion" value="reduce" /><span>Reduced</span></label>
+          </fieldset>
+          <fieldset class="seg">
+            <legend>Contrast</legend>
+            <label><input type="radio" name="contrast" value="standard" checked /><span>Standard</span></label>
+            <label><input type="radio" name="contrast" value="more" /><span>More</span></label>
+          </fieldset>
+          <fieldset class="seg">
+            <legend>Accent</legend>
+            <label><input type="radio" name="accent" value="film" checked /><span>Follows the film</span></label>
+            <label><input type="radio" name="accent" value="brand" /><span>Your brand</span></label>
+          </fieldset>
+          <fieldset class="seg">
+            <legend>Language</legend>
+            <label><input type="radio" name="lang" value="en" checked /><span>English</span></label>
+            <label><input type="radio" name="lang" value="fr" /><span lang="fr">Français</span></label>
+            <label><input type="radio" name="lang" value="ja" /><span lang="ja">日本語</span></label>
+            <label><input type="radio" name="lang" value="ar" /><span lang="ar">العربية</span></label>
+          </fieldset>
+          <p class="test-keys">Keys: <kbd>Space</kbd> play, <kbd>←</kbd><kbd>→</kbd> seek, <kbd>[</kbd><kbd>]</kbd> scenes, <kbd>M</kbd> mute, <kbd>F</kbd> fullscreen, <kbd>C</kbd> captions.</p>
+        </form>
+      </section>
+
+      <!-- Every film's fingerprint, side by side. -->
+      <section class="wall" aria-labelledby="wall-title">
+        <div class="section-head">
+          <h2 id="wall-title">Four films. Four players.</h2>
+          <p>One skin, dressed by each film. Choose one to watch it.</p>
+        </div>
+        <ul class="bands"></ul>
       </section>
 
       <section class="how" id="how" aria-labelledby="how-title">
         <div class="section-head">
           <h2 id="how-title">One image becomes the whole interface.</h2>
-          <p>Tint reads the storyboard Mux already makes for timeline previews. Nothing samples the playing video, so it costs nothing per frame.</p>
+          <p>Tint reads the storyboard that Mux already makes for timeline previews. It never samples the playing video, so it costs nothing per frame.</p>
         </div>
         <ol class="steps">
           <li class="step">
             <figure>
-              <div class="step-visual step-storyboard"><img alt="" crossorigin="anonymous" decoding="async" /></div>
+              <div class="step-visual step-storyboard"><img alt="The film's storyboard: a grid of frames" crossorigin="anonymous" decoding="async" /></div>
               <figcaption><strong>The storyboard.</strong> <span class="step-frames"></span> frames from across the film, in one image.</figcaption>
             </figure>
           </li>
@@ -65,12 +141,12 @@
           <li class="step">
             <figure>
               <div class="step-visual"><canvas class="step-print" aria-hidden="true"></canvas></div>
-              <figcaption><strong>The fingerprint.</strong> Lined up in order, the lines show the film's colour story. Big jumps in colour mark the <span class="step-scenes"></span> scenes.</figcaption>
+              <figcaption><strong>The fingerprint.</strong> In order, the lines show the film's colour story. Big jumps in colour mark its <span class="step-scenes"></span> scenes.</figcaption>
             </figure>
           </li>
         </ol>
-        <div class="palette" aria-label="Scene colours">
-          <p class="palette-label">Scene colours, used for the accent as you watch</p>
+        <div class="palette">
+          <p class="palette-label">Each scene's colour, set to a lightness that reads on the dark controls</p>
           <ol class="palette-list"></ol>
         </div>
       </section>
@@ -78,14 +154,15 @@
       <section class="care" aria-labelledby="care-title">
         <div class="section-head">
           <h2 id="care-title">Made to work for everyone.</h2>
+          <p>Every claim here can be checked with the Test it panel above.</p>
         </div>
         <dl class="care-list">
-          <div><dt>Keyboard</dt><dd>Every control is reachable. Press [ and ] to jump between scenes.</dd></div>
+          <div><dt>Keyboard</dt><dd>Every control is reachable, menus close with Escape, and [ and ] jump between scenes.</dd></div>
           <div><dt>Focus you can see</dt><dd>One ring everywhere: the scene colour with a dark halo, clear over any frame.</dd></div>
-          <div><dt>Readable colour</dt><dd>Each scene colour is set to a lightness that reads on the dark controls.</dd></div>
-          <div><dt>Calm on request</dt><dd>With reduced motion, the fold and the colour easing switch off.</dd></div>
+          <div><dt>Readable colour</dt><dd>Scene colours are set to a lightness that reads on the controls. Text on the accent picks black or white.</dd></div>
+          <div><dt>Calm on request</dt><dd>With reduced motion, the fold, the colour easing and the loading sweep switch off.</dd></div>
           <div><dt>Thumb-sized</dt><dd>44 px controls, bigger in fullscreen. Hover effects only where there's hover.</dd></div>
-          <div><dt>Any size</dt><dd>Controls reflow at four widths, from a phone to a cinema screen.</dd></div>
+          <div><dt>Any size, any language</dt><dd>Controls reflow at four widths and mirror for right-to-left languages.</dd></div>
         </dl>
       </section>
 
@@ -114,7 +191,7 @@
     </main>
 
     <footer class="foot">
-      <p>Films by <a href="https://studio.blender.org">Blender Studio</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Streamed by <a href="https://www.mux.com">Mux</a>. Built on <a href="https://videojs.org">Video.js v10</a>.</p>
+      <p>Films by <a href="https://studio.blender.org">Blender Studio</a>: Sprite Fright, Spring, Coffee Run and Charge, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Streamed by <a href="https://www.mux.com">Mux</a>. Built on <a href="https://videojs.org">Video.js v10</a>. Type: Mona Sans.</p>
       <p>Tint is open source under the Apache License 2.0. Made for the Video.js Skins Challenge, 2026.</p>
     </footer>
 

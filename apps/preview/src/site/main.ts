@@ -3,7 +3,9 @@ import '@videojs/html/video/player';
 import '@videojs/html/media/mux-video';
 import '@/video/skin';
 import skinTemplate from '@/video/skin.html?raw';
+import { tintTranslations } from '@/video/tint/i18n';
 import { TintModel } from '@/video/tint/model';
+import { registerI18n } from '@videojs/html/i18n';
 import type { MediaTextCue } from '@videojs/html';
 
 import { FILMS, type Film } from './films';
@@ -11,11 +13,17 @@ import './site.css';
 
 const PLACEHOLDER = '<!-- Add a compatible media component here. -->';
 const LIT = 'saturate(1.4) contrast(1.08) brightness(1.06)';
+const BRAND = '#f5c518';
 const dpr = () => Math.min(2, window.devicePixelRatio || 1);
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const $ = <T extends Element>(sel: string) => document.querySelector<T>(sel)!;
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.tintMotion === 'reduce';
+const $ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel)!;
 
-// ---------- Fingerprints outside the player, from the same storyboard ----------
+const formatTime = (seconds: number) => {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+// ---------------------------------------------------------------- Fingerprints for the page
 
 function parseVtt(text: string): MediaTextCue[] {
   const toSeconds = (s: string) => s.split(':').reduce((a, v) => a * 60 + parseFloat(v), 0);
@@ -36,14 +44,18 @@ function modelFor(film: Film): Promise<TintModel> {
   if (!p) {
     p = (async () => {
       const src = `https://image.mux.com/${film.id}/storyboard.vtt`;
-      const text = await (await fetch(src)).text();
       const model = new TintModel();
-      await model.setTrack({ cues: parseVtt(text), src, crossOrigin: 'anonymous' });
+      await model.setTrack({ cues: parseVtt(await (await fetch(src)).text()), src, crossOrigin: 'anonymous' });
       return model;
     })();
     models.set(film.id, p);
   }
   return p;
+}
+
+function sizeOf(el: Element): { w: number; h: number } {
+  const r = el.getBoundingClientRect();
+  return { w: Math.max(1, Math.round(r.width * dpr())), h: Math.max(1, Math.round(r.height * dpr())) };
 }
 
 function draw(canvas: HTMLCanvasElement, source: HTMLCanvasElement | null): void {
@@ -53,119 +65,250 @@ function draw(canvas: HTMLCanvasElement, source: HTMLCanvasElement | null): void
   canvas.getContext('2d')!.drawImage(source, 0, 0);
 }
 
-function sized(el: Element): { w: number; h: number } {
-  const r = el.getBoundingClientRect();
-  return { w: Math.max(1, r.width * dpr()), h: Math.max(1, r.height * dpr()) };
+/** Show one storyboard frame in an element, scaled to the element's width. */
+function showFrame(model: TintModel, el: HTMLElement, index: number): void {
+  const f = model.frames[index];
+  const img = f && model.image(f.url);
+  if (!f || !img) return;
+  const k = (el.getBoundingClientRect().width || 200) / f.w;
+  el.style.backgroundImage = `url("${f.url}")`;
+  el.style.backgroundSize = `${img.naturalWidth * k}px ${img.naturalHeight * k}px`;
+  el.style.backgroundPosition = `${-f.x * k}px ${-f.y * k}px`;
 }
 
-const formatTime = (seconds: number) => {
-  const s = Math.max(0, Math.round(seconds));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const accent = (model: TintModel, frame: number) => {
+  const a = model.accentOf(frame);
+  return `oklch(${a.l} ${a.c} ${a.h})`;
 };
 
-// ---------- The player ----------
+// ---------------------------------------------------------------- The player
 
-const playerHost = $<HTMLElement>('#player');
-const i18n = document.createElement('media-i18n');
-const player = document.createElement('video-player');
 let current: Film = FILMS[0]!;
+const frame = $('.player-frame');
+const i18n = document.createElement('media-i18n');
+i18n.setAttribute('lang', 'en');
+const player = document.createElement('video-player');
 player.setAttribute('content-title', current.title);
 player.innerHTML = skinTemplate.replace(
   PLACEHOLDER,
   `<mux-video src="https://stream.mux.com/${current.id}.m3u8" playsinline crossorigin="anonymous" preload="metadata"></mux-video>`
 );
 i18n.append(player);
-playerHost.append(i18n);
+$('#player').append(i18n);
+const media = () => player.querySelector('mux-video') as (HTMLElement & HTMLMediaElement) | null;
 
-// ---------- The wordmark, painted with the film ----------
+// ---------------------------------------------------------------- Hero: the film you can move through
 
-const layers = [...document.querySelectorAll<HTMLElement>('.mark-layer')];
-let activeLayer = 0;
-async function paintMark(film: Film): Promise<void> {
+const hero = $('.hero');
+const heroFilm = $('.hero-film');
+const heroCanvas = $<HTMLCanvasElement>('.hero-print');
+const heroRise = $('.hero-rise');
+const lens = $('.hero-lens');
+const lensFrame = $('.hero-lens-frame');
+const lensCard = $('.hero-lens-card');
+const lensScene = $('.hero-lens-scene');
+const lensTime = $('.hero-lens-time');
+let heroModel: TintModel | null = null;
+
+async function paintHero(film: Film, rise: boolean): Promise<void> {
   const model = await modelFor(film);
-  if (film !== current) return;
-  const mark = $<HTMLElement>('.mark');
-  const { w, h } = sized(mark);
+  if (film !== current || model.status !== 'ready') return;
+  const { w, h } = sizeOf(heroFilm);
   const print = model.print(w, h, LIT);
   if (!print) return;
-  const next = layers[1 - activeLayer]!;
-  next.style.backgroundImage = `url(${print.toDataURL('image/jpeg', 0.9)})`;
-  next.dataset.active = '';
-  delete layers[activeLayer]!.dataset.active;
-  activeLayer = 1 - activeLayer;
-  document.documentElement.dataset.painted = '';
+  heroModel = model;
+  hero.style.setProperty('--hero-accent', accent(model, model.signature()));
+
+  if (!rise || calm() || !heroCanvas.width) {
+    draw(heroCanvas, print);
+    heroFilm.dataset.ready = '';
+    return;
+  }
+
+  // The new film rises up through the old one, column by column.
+  const url = print.toDataURL('image/jpeg', 0.9);
+  const n = 64;
+  const cw = heroFilm.clientWidth / n;
+  const slices = Array.from({ length: n }, (_, i) => {
+    const s = document.createElement('i');
+    s.style.cssText = `left:${i * cw}px;width:${cw + 1}px;background-image:url(${url});background-size:${heroFilm.clientWidth}px 100%;background-position:${-i * cw}px 0;transition-delay:${Math.abs(i - n / 2) * 9}ms`;
+    return s;
+  });
+  heroRise.replaceChildren(...slices);
+  void heroRise.offsetWidth;
+  heroRise.dataset.on = '';
+  window.setTimeout(() => {
+    if (film !== current) return;
+    draw(heroCanvas, print);
+    delete heroRise.dataset.on;
+    heroRise.replaceChildren();
+  }, 1100);
 }
 
-// ---------- The shelf ----------
+// The lens follows the pointer with a little lag, so it feels like moving through the film rather than jumping.
+let lensTarget = 0;
+let lensX = 0;
+let lensFrameIndex = -1;
+let lensRaf = 0;
+function moveLens(): void {
+  lensX = calm() ? lensTarget : lensX + (lensTarget - lensX) * 0.22;
+  const width = heroFilm.clientWidth;
+  lens.style.setProperty('--x', `${lensX}px`);
+  lens.style.setProperty('--card-x', `${Math.max(110, Math.min(width - 110, lensX))}px`);
+  hero.style.setProperty('--light-x', `${(lensX / width) * 100}%`);
+  if (heroModel) {
+    const t = (lensX / width) * heroModel.duration;
+    const f = heroModel.frameAt(t);
+    if (f !== lensFrameIndex) {
+      lensFrameIndex = f;
+      const fr = heroModel.frames[f];
+      if (fr?.w && fr.h) lensFrame.style.aspectRatio = ${fr.w} / ;
+      showFrame(heroModel, lensFrame, f);
+      lens.style.setProperty('--lens-color', accent(heroModel, f));
+      const scene = heroModel.scenes[heroModel.sceneAt(t)];
+      lensScene.textContent = scene ? scene.title || `Scene ${scene.index + 1}` : '';
+    }
+    lensTime.textContent = formatTime(t);
+  }
+  if (Math.abs(lensTarget - lensX) > 0.5) lensRaf = requestAnimationFrame(moveLens);
+  else lensRaf = 0;
+}
 
-const shelf = $<HTMLUListElement>('.shelf');
-const cards = FILMS.map((film) => {
+function pointAt(clientX: number): void {
+  const r = heroFilm.getBoundingClientRect();
+  lensTarget = Math.max(0, Math.min(r.width, clientX - r.left));
+  if (!hero.hasAttribute('data-looking')) {
+    lensX = lensTarget;
+    hero.dataset.looking = '';
+  }
+  if (!lensRaf) lensRaf = requestAnimationFrame(moveLens);
+}
+
+const onFilmArea = (e: PointerEvent) => !(e.target as Element).closest('.hero-side, a');
+hero.addEventListener('pointermove', (e) => {
+  if (onFilmArea(e) || e.pointerType === 'touch') pointAt(e.clientX);
+  else delete hero.dataset.looking;
+});
+hero.addEventListener('pointerdown', (e) => { if (onFilmArea(e)) pointAt(e.clientX); });
+hero.addEventListener('pointerleave', () => delete hero.dataset.looking);
+hero.addEventListener('click', (e) => {
+  if (!onFilmArea(e as PointerEvent) || !heroModel) return;
+  const r = heroFilm.getBoundingClientRect();
+  watchFrom(((e.clientX - r.left) / r.width) * heroModel.duration);
+});
+
+function watchFrom(time: number): void {
+  const m = media();
+  if (!m) return;
+  $('#watch').scrollIntoView({ behavior: calm() ? 'auto' : 'smooth', block: 'start' });
+  const start = () => {
+    m.currentTime = Math.max(0, time - 0.5);
+    void m.play().catch(() => undefined);
+  };
+  if (m.readyState >= 1) start();
+  else m.addEventListener('loadedmetadata', start, { once: true });
+}
+
+// ---------------------------------------------------------------- Film choice (hero buttons and the wall)
+
+const filmButtons = $('.films');
+const bands = $('.bands');
+
+const heroButtons = FILMS.map((film) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'film-button';
+  b.innerHTML = '<canvas aria-hidden="true"></canvas><span></span>';
+  b.querySelector('span')!.textContent = film.title;
+  b.addEventListener('click', () => select(film));
+  filmButtons.append(b);
+  return { film, button: b, canvas: b.querySelector('canvas')! };
+});
+
+const wallBands = FILMS.map((film) => {
   const li = document.createElement('li');
   li.innerHTML = `
-    <button class="card" type="button" aria-pressed="false">
-      <span class="card-print"><canvas aria-hidden="true"></canvas></span>
-      <span class="card-text">
-        <span class="card-title"></span>
-        <span class="card-line"></span>
-        <span class="card-meta"></span>
+    <button class="band" type="button">
+      <canvas aria-hidden="true"></canvas>
+      <span class="band-text">
+        <span class="band-title"></span>
+        <span class="band-line"></span>
       </span>
+      <span class="band-meta"></span>
     </button>`;
-  li.querySelector('.card-title')!.textContent = film.title;
-  li.querySelector('.card-line')!.textContent = film.line;
-  const button = li.querySelector<HTMLButtonElement>('.card')!;
-  button.addEventListener('click', () => select(film));
-  shelf.append(li);
-  return { film, button, canvas: li.querySelector('canvas')!, meta: li.querySelector<HTMLElement>('.card-meta')! };
+  li.querySelector('.band-title')!.textContent = film.title;
+  li.querySelector('.band-line')!.textContent = film.line;
+  const button = li.querySelector<HTMLButtonElement>('.band')!;
+  button.addEventListener('click', () => {
+    select(film);
+    $('#watch').scrollIntoView({ behavior: calm() ? 'auto' : 'smooth', block: 'start' });
+  });
+  bands.append(li);
+  return { film, button, canvas: li.querySelector('canvas')!, meta: li.querySelector<HTMLElement>('.band-meta')! };
 });
-shelf.toggleAttribute('data-single', FILMS.length < 2);
 
-async function paintCards(): Promise<void> {
-  for (const card of cards) {
-    const model = await modelFor(card.film).catch(() => null);
-    if (!model || model.status !== 'ready') continue;
-    const { w, h } = sized(card.canvas.parentElement!);
-    draw(card.canvas, model.print(w, h, LIT));
-    card.meta.textContent = `${formatTime(model.duration)}, ${model.scenes.length} scenes, ${card.film.year}`;
-  }
+async function paintChoices(): Promise<void> {
+  await Promise.all(
+    FILMS.map(async (film) => {
+      const model = await modelFor(film).catch(() => null);
+      if (!model || model.status !== 'ready') return;
+      const hb = heroButtons.find((b) => b.film === film)!;
+      const s1 = sizeOf(hb.canvas);
+      draw(hb.canvas, model.print(s1.w, s1.h, LIT));
+      const band = wallBands.find((b) => b.film === film)!;
+      const s2 = sizeOf(band.canvas);
+      draw(band.canvas, model.print(s2.w, s2.h, LIT));
+      band.meta.textContent = `${formatTime(model.duration)} · ${model.scenes.length} scenes · ${film.year}`;
+      band.button.setAttribute('aria-label', `Watch ${film.title}, ${film.year}. ${film.line}`);
+    })
+  );
 }
 
-// ---------- How it works, drawn from the current film ----------
+function syncChoice(): void {
+  for (const b of heroButtons) b.button.setAttribute('aria-pressed', String(b.film === current));
+  for (const b of wallBands) b.button.toggleAttribute('data-current', b.film === current);
+  $('.watch-film').textContent = current.title;
+  $('.watch-line').textContent = current.line;
+}
+
+function select(film: Film): void {
+  if (film === current) return;
+  current = film;
+  const m = media();
+  m?.pause();
+  player.setAttribute('content-title', film.title);
+  m?.setAttribute('src', `https://stream.mux.com/${film.id}.m3u8`);
+  syncChoice();
+  void paintHero(film, true);
+  void paintSteps(film);
+}
+
+// ---------------------------------------------------------------- How it works, drawn from the current film
 
 async function paintSteps(film: Film): Promise<void> {
   const model = await modelFor(film);
   if (film !== current || model.status !== 'ready') return;
-  const first = model.frames[0]!;
-  const img = model.image(first.url);
 
-  const storyboard = $<HTMLImageElement>('.step-storyboard img');
-  storyboard.src = first.url;
+  $<HTMLImageElement>('.step-storyboard img').src = model.frames[0]!.url;
   $('.step-frames').textContent = String(model.frames.length);
   $('.step-scenes').textContent = String(model.scenes.length);
 
-  // Slits: the film's most vivid frame, cut into strips, each strip squeezed to one line.
+  // One bright, colourful frame cut into strips, each strip squeezed to a single line of colour.
   const slits = $<HTMLCanvasElement>('.step-slits');
-  const { w, h } = sized(slits);
+  const { w, h } = sizeOf(slits);
   slits.width = w;
   slits.height = h;
   const g = slits.getContext('2d')!;
-  // The brightest colourful frame shows the slits most clearly.
   const f = model.frames.reduce((best, fr) => (fr.chroma * fr.lab[0] > best.chroma * best.lab[0] ? fr : best), model.frames[0]!);
-  const frameImg = model.image(f.url) ?? img;
-  if (frameImg) {
+  const img = model.image(f.url);
+  if (img) {
     const K = 12;
     const frameW = w * 0.6;
-    const frameH = Math.min(h, (frameW * f.h) / f.w);
+    const frameH = Math.min(h * 0.9, (frameW * f.h) / f.w);
     const top = (h - frameH) / 2;
-    g.drawImage(frameImg, f.x, f.y, f.w, f.h, 0, top, frameW, frameH);
-    g.strokeStyle = 'rgba(10,10,11,0.9)';
-    g.lineWidth = Math.max(1, dpr());
-    for (let k = 1; k < K; k++) {
-      const x = Math.round((k * frameW) / K) + 0.5;
-      g.beginPath();
-      g.moveTo(x, top);
-      g.lineTo(x, top + frameH);
-      g.stroke();
-    }
+    g.drawImage(img, f.x, f.y, f.w, f.h, 0, top, frameW, frameH);
+    g.fillStyle = 'rgba(11,11,12,0.9)';
+    for (let k = 1; k < K; k++) g.fillRect(Math.round((k * frameW) / K), top, Math.max(1, dpr()), frameH);
     const column = document.createElement('canvas');
     column.width = 1;
     column.height = Math.round(frameH);
@@ -176,29 +319,22 @@ async function paintSteps(film: Film): Promise<void> {
     g.imageSmoothingEnabled = false;
     for (let k = 0; k < K; k++) {
       cg.clearRect(0, 0, 1, column.height);
-      cg.drawImage(frameImg, f.x + (k * f.w) / K, f.y, f.w / K, f.h, 0, 0, 1, column.height);
+      cg.drawImage(img, f.x + (k * f.w) / K, f.y, f.w / K, f.h, 0, 0, 1, column.height);
       g.drawImage(column, barsX + k * (barW + gap), top, barW, frameH);
     }
   }
 
-  // The fingerprint, with a hairline at each scene change.
   const printCanvas = $<HTMLCanvasElement>('.step-print');
-  const size = sized(printCanvas);
+  const size = sizeOf(printCanvas);
   draw(printCanvas, model.print(size.w, size.h, LIT));
   const pg = printCanvas.getContext('2d')!;
-  pg.fillStyle = 'rgba(10,10,11,0.95)';
-  for (const scene of model.scenes.slice(1)) {
-    const x = Math.round((scene.start / model.duration) * size.w);
-    pg.fillRect(x - dpr(), 0, 2 * dpr(), size.h);
-  }
+  pg.fillStyle = 'rgba(11,11,12,0.95)';
+  for (const scene of model.scenes.slice(1)) pg.fillRect(Math.round((scene.start / model.duration) * size.w) - dpr(), 0, 2 * dpr(), size.h);
 
-  // Scene colours.
-  const list = $<HTMLOListElement>('.palette-list');
-  list.replaceChildren(
+  $('.palette-list').replaceChildren(
     ...model.scenes.map((scene) => {
-      const a = model.accentOf(scene.face);
       const li = document.createElement('li');
-      li.style.setProperty('--swatch', `oklch(${a.l} ${a.c} ${a.h})`);
+      li.style.setProperty('--swatch', accent(model, scene.face));
       li.innerHTML = '<span class="swatch" aria-hidden="true"></span><span class="swatch-name"></span><span class="swatch-time"></span>';
       li.querySelector('.swatch-name')!.textContent = scene.title || `Scene ${scene.index + 1}`;
       li.querySelector('.swatch-time')!.textContent = formatTime(scene.start);
@@ -207,27 +343,62 @@ async function paintSteps(film: Film): Promise<void> {
   );
 }
 
-// ---------- Choosing a film ----------
+// ---------------------------------------------------------------- Test it
 
-function select(film: Film): void {
-  if (film === current) return;
-  current = film;
-  const media = player.querySelector('mux-video') as (HTMLElement & { pause?: () => void }) | null;
-  media?.pause?.();
-  player.setAttribute('content-title', film.title);
-  media?.setAttribute('src', `https://stream.mux.com/${film.id}.m3u8`);
-  syncCards();
-  void paintMark(film);
-  void paintSteps(film);
-  const r = playerHost.getBoundingClientRect();
-  if (r.top < 0 || r.bottom > innerHeight) playerHost.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'center' });
+const loadedLocales = new Set(['en']);
+async function setLanguage(lang: string): Promise<void> {
+  if (!loadedLocales.has(lang)) {
+    const packs: Record<string, () => Promise<{ default: unknown }>> = {
+      fr: () => import('@videojs/html/i18n/locales/fr'),
+      ja: () => import('@videojs/html/i18n/locales/ja'),
+      ar: () => import('@videojs/html/i18n/locales/ar'),
+    };
+    const pack = await packs[lang]?.();
+    if (pack) registerI18n(lang, pack.default as never);
+    if (tintTranslations[lang]) registerI18n(lang, tintTranslations[lang] as never);
+    loadedLocales.add(lang);
+  }
+  i18n.setAttribute('lang', lang);
+  frame.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
 }
+registerI18n('en', tintTranslations.en as never);
 
-function syncCards(): void {
-  for (const card of cards) card.button.setAttribute('aria-pressed', String(card.film === current));
-}
+const test = $<HTMLFormElement>('.test');
+test.addEventListener('change', (event) => {
+  const input = event.target as HTMLInputElement;
+  const value = input.value;
+  const root = document.documentElement;
+  switch (input.name) {
+    case 'page':
+      root.dataset.theme = value;
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', value === 'light' ? '#ffffff' : '#0b0b0c');
+      break;
+    case 'size':
+      frame.dataset.size = value;
+      break;
+    case 'shape':
+      frame.style.setProperty('--shape', value);
+      break;
+    case 'motion':
+      if (value === 'reduce') root.dataset.tintMotion = 'reduce';
+      else delete root.dataset.tintMotion;
+      break;
+    case 'contrast':
+      if (value === 'more') frame.dataset.tintContrast = 'more';
+      else delete frame.dataset.tintContrast;
+      break;
+    case 'accent':
+      if (value === 'brand') frame.style.setProperty('--media-accent-color', BRAND);
+      else frame.style.removeProperty('--media-accent-color');
+      break;
+    case 'lang':
+      void setLanguage(value);
+      break;
+  }
+});
+test.addEventListener('submit', (e) => e.preventDefault());
 
-// ---------- Copy the snippet ----------
+// ---------------------------------------------------------------- Copy the snippet
 
 const copy = $<HTMLButtonElement>('.code-copy');
 copy.addEventListener('click', async () => {
@@ -240,14 +411,14 @@ copy.addEventListener('click', async () => {
   window.setTimeout(() => (copy.textContent = 'Copy'), 1600);
 });
 
-// ---------- Start ----------
+// ---------------------------------------------------------------- Start
 
-syncCards();
-void paintMark(current);
-void paintCards();
+syncChoice();
+void paintHero(current, false);
+void paintChoices();
 void paintSteps(current);
 
-// Repaint only when the page width changes, not when content below grows.
+// Repaint when the page width changes.
 let resizeFrame = 0;
 let lastWidth = document.documentElement.clientWidth;
 new ResizeObserver(() => {
@@ -256,8 +427,8 @@ new ResizeObserver(() => {
   lastWidth = width;
   cancelAnimationFrame(resizeFrame);
   resizeFrame = requestAnimationFrame(() => {
-    void paintMark(current);
-    void paintCards();
+    void paintHero(current, false);
+    void paintChoices();
     void paintSteps(current);
   });
 }).observe(document.documentElement);
