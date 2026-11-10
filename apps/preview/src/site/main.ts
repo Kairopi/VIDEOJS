@@ -154,7 +154,8 @@ function moveLens(): void {
   lensX = calm() ? lensTarget : lensX + (lensTarget - lensX) * 0.22;
   const width = heroFilm.clientWidth;
   lens.style.setProperty('--x', `${lensX}px`);
-  lens.style.setProperty('--card-x', `${Math.max(110, Math.min(width - 110, lensX))}px`);
+  const half = (lensCard.offsetWidth || 220) / 2 + 12;
+  lens.style.setProperty('--card-x', `${Math.max(half, Math.min(width - half, lensX))}px`);
   hero.style.setProperty('--light-x', `${(lensX / width) * 100}%`);
   if (heroModel) {
     const t = (lensX / width) * heroModel.duration;
@@ -162,7 +163,7 @@ function moveLens(): void {
     if (f !== lensFrameIndex) {
       lensFrameIndex = f;
       const fr = heroModel.frames[f];
-      if (fr?.w && fr.h) lensFrame.style.aspectRatio = ${fr.w} / ;
+      if (fr?.w && fr.h) lensFrame.style.aspectRatio = `${fr.w} / ${fr.h}`;
       showFrame(heroModel, lensFrame, f);
       lens.style.setProperty('--lens-color', accent(heroModel, f));
       const scene = heroModel.scenes[heroModel.sceneAt(t)];
