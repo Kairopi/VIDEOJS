@@ -30,7 +30,7 @@ const formatTime = (seconds: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-// ---------------------------------------------------------------- Fingerprints for the page
+// ---------------------------------------------------------------- Films and their storyboards
 
 function parseVtt(text: string): MediaTextCue[] {
   const toSeconds = (s: string) => s.split(':').reduce((a, v) => a * 60 + parseFloat(v), 0);
@@ -81,6 +81,7 @@ function showFrame(model: TintModel, el: HTMLElement, index: number): void {
   el.style.backgroundImage = `url("${f.url}")`;
   el.style.backgroundSize = `${img.naturalWidth * k}px ${img.naturalHeight * k}px`;
   el.style.backgroundPosition = `${-f.x * k}px ${-f.y * k}px`;
+  if (f.w && f.h) el.style.aspectRatio = `${f.w} / ${f.h}`;
 }
 
 const accent = (model: TintModel, frame: number) => {
@@ -105,113 +106,425 @@ $('#player').append(i18n);
 const media = () => player.querySelector('mux-video') as (HTMLElement & HTMLMediaElement) | null;
 const skin = () => player.querySelector<HTMLElement>('.media-skin');
 
-// ---------------------------------------------------------------- The stage: the film, then the player
+// ---------------------------------------------------------------- The columns: one per real storyboard frame
+
+/** Each frame becomes one column, drawn from an atlas where it is SLITS pixels wide. */
+const SLITS = 3;
+const ATLAS_H = 240;
+interface Column {
+  film: number;
+  frame: number;
+  ax: number;
+  /** Place in the spectrum, 0..1. */
+  rank: number;
+}
+let columns: Column[] = [];
+let spectrum: Column[] = [];
+let atlas: HTMLCanvasElement | null = null;
+const filmModels: (TintModel | null)[] = FILMS.map(() => null);
+
+function buildColumns(): void {
+  const ready = filmModels.every((m) => m?.status === 'ready');
+  if (!ready) return;
+  const all: (Column & { key: number })[] = [];
+  let ax = 0;
+  filmModels.forEach((model, film) => {
+    model!.frames.forEach((f, i) => {
+      // Sort by the frame's mean colour, which is what its column looks like. Near-greys open the spectrum, dark to
+      // light; colours follow round the wheel from red, each hue band running dark to light.
+      const [L, a, b] = f.lab;
+      const chroma = Math.hypot(a, b);
+      const hue = ((Math.atan2(b, a) * 180) / Math.PI + 360 - 15) % 360;
+      const key = chroma < 0.018 ? L : 1 + Math.floor(hue / 15) + L * 0.99;
+      all.push({ film, frame: i, ax, rank: 0, key });
+      ax += SLITS;
+    });
+  });
+  const raw = document.createElement('canvas');
+  raw.width = ax;
+  raw.height = ATLAS_H;
+  const rg = raw.getContext('2d')!;
+  rg.imageSmoothingQuality = 'high';
+  for (const c of all) {
+    const model = filmModels[c.film]!;
+    const f = model.frames[c.frame]!;
+    const img = model.image(f.url);
+    if (!img) continue;
+    for (let k = 0; k < SLITS; k++) rg.drawImage(img, f.x + (k * f.w) / SLITS, f.y, f.w / SLITS, f.h, c.ax + k, 0, 1, ATLAS_H);
+  }
+  atlas = document.createElement('canvas');
+  atlas.width = ax;
+  atlas.height = ATLAS_H;
+  const ag = atlas.getContext('2d')!;
+  ag.filter = LIT;
+  ag.drawImage(raw, 0, 0);
+
+  spectrum = [...all].sort((p, q) => p.key - q.key);
+  spectrum.forEach((c, r) => (c.rank = r / spectrum.length));
+  columns = all;
+  view.dataset.ready = '';
+  requestDraw();
+}
+
+// ---------------------------------------------------------------- The stage
 
 const stage = $('.stage');
 const pin = $('.stage-pin');
 const view = $('.stage-view');
-const hero = $('.hero');
-const heroFilm = $('.hero-film');
-const heroCanvas = $<HTMLCanvasElement>('.hero-print');
-const heroCopy = $('.hero-copy');
-const caption = $('.hero-caption');
-const shade = $('.hero-shade');
-let heroModel: TintModel | null = null;
+const canvas = $<HTMLCanvasElement>('.sv-canvas');
+const ctx = canvas.getContext('2d')!;
+const back = $('.sv-back');
+const shade = $('.sv-shade');
+const copy = $('.sv-copy');
+const caption = $('.sv-caption');
+const titles = $('.sv-titles');
+const lens = $('.sv-lens');
+const lensFrame = $('.sv-lens-frame');
+const lensCard = $('.sv-lens-card');
+const lensName = $('.sv-lens-name');
+const lensTime = $('.sv-lens-time');
+const bar = $('.bar');
 
-async function paintHero(film: Film): Promise<void> {
-  const model = await modelFor(film);
-  if (film !== current || model.status !== 'ready') return;
-  // Always drawn at full-screen size; while the film shrinks into the player, the browser scales this bitmap.
-  const print = model.print(Math.round(view.clientWidth * dpr()), Math.round(view.clientHeight * dpr()), LIT);
-  if (!print) return;
-  heroModel = model;
-  draw(heroCanvas, print);
-  heroFilm.dataset.ready = '';
-  // The accent swatch shows this film's scene colours; the bar's dot wears its signature colour.
-  const stops = model.scenes.map((s) => accent(model, s.face));
-  if (stops.length > 1) $('.console').style.setProperty('--film-swatch', `conic-gradient(${[...stops, stops[0]].join(', ')})`);
-  $('.dock').style.setProperty('--dock-chip', accent(model, model.signature()));
-  startIdle();
-}
+// The film names over the four panels in the first act.
+const titleEls = FILMS.map((film) => {
+  const s = document.createElement('span');
+  s.innerHTML = '<b></b><small></small>';
+  s.querySelector('b')!.textContent = film.title;
+  s.querySelector('small')!.textContent = String(film.year);
+  titles.append(s);
+  return s;
+});
 
-// How far the film has shrunk into the player: 0 is full screen, 1 is landed.
+// Pointing at a panel in the first act widens it.
+const weights = FILMS.map(() => 1);
+let hoverFilm = -1;
+
 let progress = 0;
-let radius = 16;
 const travel = () => Math.max(1, stage.offsetHeight - pin.offsetHeight);
 const stageEnd = () => stage.getBoundingClientRect().top + window.scrollY + travel();
+/** Where the spectrum is held, and where the film has landed. */
+const SPECTRUM_AT = 0.48;
 
-function layoutStage(): void {
+// Act boundaries along the scroll.
+const toSpectrum = (p: number) => (calm() ? (p > 0.24 ? 1 : 0) : smooth(0.08, 0.4, p));
+const toPlayer = (p: number) => (calm() ? (p > 0.64 ? 1 : 0) : smooth(0.56, 0.9, p));
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+const rel = (el: Element | null, v: DOMRect): Box | null => {
+  const r = el?.getBoundingClientRect();
+  return r && r.width ? { x: r.left - v.left, y: r.top - v.top, w: r.width, h: r.height } : null;
+};
+
+/** Panel edges for the first act. */
+function panels(W: number): { x: number; w: number }[] {
+  const total = weights.reduce((a, b) => a + b, 0);
+  let x = 0;
+  return weights.map((wt) => {
+    const w = (wt / total) * W;
+    const out = { x, w };
+    x += w;
+    return out;
+  });
+}
+
+const STAGGER = 0.6;
+const wave = (phase: number, pos: number) => (calm() ? phase : easeInOut(clamp(phase * (1 + STAGGER) - pos * STAGGER, 0, 1)));
+
+let drawRaf = 0;
+function requestDraw(): void {
+  if (!drawRaf) drawRaf = requestAnimationFrame(() => ((drawRaf = 0), render()));
+}
+
+function render(): void {
   const p = clamp(-stage.getBoundingClientRect().top / travel(), 0, 1);
   progress = p;
-  const target = skin()?.getBoundingClientRect();
   const v = view.getBoundingClientRect();
-  if (target?.width) {
-    const quiet = calm();
-    const e = quiet ? 0 : easeInOut(p);
-    const x = lerp(0, target.left - v.left, e);
-    const y = lerp(0, target.top - v.top, e);
-    const w = lerp(v.width, target.width, e);
-    const h = lerp(v.height, target.height, e);
-    const s = hero.style;
-    s.left = `${x}px`;
-    s.top = `${y}px`;
-    s.width = `${w}px`;
-    s.height = `${h}px`;
-    s.borderRadius = `${lerp(0, radius, e)}px`;
-    // Hand over to the real player, whose poster is the same fingerprint, as the film lands.
-    const gone = quiet ? p > 0.3 : p > 0.985;
-    hero.style.opacity = quiet ? (gone ? '0' : '1') : String(1 - smooth(0.9, 0.985, p));
-    hero.toggleAttribute('data-gone', gone);
-    hero.toggleAttribute('data-calm', quiet);
-    hero.toggleAttribute('data-moving', p > 0.01);
-    const fade = 1 - smooth(0, quiet ? 0.2 : 0.32, p);
-    heroCopy.style.opacity = caption.style.opacity = String(fade);
-    heroCopy.style.translate = caption.style.translate = quiet ? '' : `0 ${-p * 90}px`;
-    shade.style.opacity = String(1 - smooth(0.1, 0.6, p));
+  const W = v.width;
+  const H = v.height;
+  const s1 = toSpectrum(p);
+  const s2 = toPlayer(p);
+
+  // Ease the panel widths toward the pointed-at film.
+  let settling = false;
+  weights.forEach((wt, k) => {
+    const goal = hoverFilm === k && s1 === 0 ? 2.1 : 1;
+    const next = calm() ? goal : wt + (goal - wt) * 0.16;
+    if (Math.abs(next - goal) > 0.002) settling = true;
+    weights[k] = Math.abs(next - goal) > 0.002 ? next : goal;
+  });
+
+  // Canvas at the view's pixel size.
+  const k = dpr();
+  const cw = Math.round(W * k);
+  const ch = Math.round(H * k);
+  if (canvas.width !== cw || canvas.height !== ch) {
+    canvas.width = cw;
+    canvas.height = ch;
   }
-  if (p <= 0.01) startIdle();
-  if (pending && p >= 0.999) runPending();
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.imageSmoothingEnabled = false;
+
+  const P = panels(W);
+  P.forEach((panel, i) => {
+    const t = titleEls[i]!;
+    t.style.left = `${panel.x + 16}px`;
+    t.style.maxWidth = `${Math.max(0, panel.w - 24)}px`;
+  });
+
+  if (atlas && columns.length) {
+    const target = rel(skin(), v);
+    const picks = pickEls.map((b) => rel(b.canvas, v));
+    const counts = filmModels.map((m) => m?.frames.length ?? 1);
+    for (const c of columns) {
+      const n = counts[c.film]!;
+      // Act 1: the film's own panel, in time order.
+      const panel = P[c.film]!;
+      const tx = panel.x + (panel.w * c.frame) / n;
+      const tw = panel.w / n;
+      // Act 2: its place in the spectrum.
+      const sx = W * c.rank;
+      const sw = W / spectrum.length;
+      // Act 3: back in time order, in the player or in its film's button.
+      const dest = c.film === currentIndex() ? target : picks[c.film];
+      const box = dest ?? { x: sx, y: H, w: sw, h: 0 };
+      const dx = box.x + (box.w * c.frame) / n;
+      const dw = box.w / n;
+
+      const e1 = wave(s1, (tx + tw / 2) / W);
+      const e2 = wave(s2, sx / W);
+      let x = lerp(tx, sx, e1);
+      let w = lerp(tw, sw, e1);
+      let y = 0;
+      let h = H;
+      // A lift as each column travels, so the wave reads as flight rather than a slide.
+      const lift = calm() ? 0 : Math.sin(Math.PI * e1) * 0.1 + Math.sin(Math.PI * e2) * 0.06;
+      y += (H * lift) / 2;
+      h -= H * lift;
+      x = lerp(x, dx, e2);
+      w = lerp(w, dw, e2);
+      y = lerp(y, box.y, e2);
+      h = lerp(h, box.h, e2);
+      ctx.drawImage(atlas, c.ax, 0, SLITS, ATLAS_H, x, y, w + 0.6, h);
+    }
+  }
+
+  // Words and light for each act.
+  const quiet = calm();
+  const copyFade = 1 - smooth(0.02, 0.13, p);
+  copy.style.opacity = String(copyFade);
+  copy.style.translate = quiet ? '' : `0 ${-p * 260}px`;
+  titles.style.opacity = String(1 - smooth(0.03, 0.1, p));
+  const cap = smooth(0.32, 0.41, p) * (1 - smooth(0.55, 0.62, p));
+  caption.style.opacity = String(cap);
+  caption.style.translate = quiet ? '' : `0 ${(1 - smooth(0.3, 0.42, p)) * 30 - smooth(0.55, 0.62, p) * 30}px`;
+  shade.style.opacity = String(1 - smooth(0.56, 0.7, p));
+
+  // Hand over to the real player and buttons as the frames land. Its poster is the same fingerprint.
+  const gone = quiet ? p > 0.7 : p > 0.985;
+  const fade = quiet ? (gone ? 0 : 1) : 1 - smooth(0.9, 0.985, p);
+  canvas.style.opacity = back.style.opacity = String(fade);
+  view.toggleAttribute('data-gone', gone);
+  view.toggleAttribute('data-touchable', !gone && (s2 === 0));
+  bar.toggleAttribute('data-solid', p > 0.9);
+
+  // The lens only while an act is held still.
+  const still = (s1 === 0 || (s1 === 1 && s2 === 0)) && !gone;
+  if (!still) lens.removeAttribute('data-on');
+
+  if (p >= 0.999) landed();
+  else if (p < 0.6) leftPlayer();
   markSection();
+  if (settling) requestDraw();
+  if (p <= 0.01) startIdle();
 }
 
-let layoutRaf = 0;
-const requestLayout = () => {
-  if (!layoutRaf) layoutRaf = requestAnimationFrame(() => ((layoutRaf = 0), layoutStage()));
+window.addEventListener('scroll', requestDraw, { passive: true });
+new ResizeObserver(requestDraw).observe(frame);
+new ResizeObserver(requestDraw).observe(view);
+
+// ---------------------------------------------------------------- The lens: point at a moment
+
+let lensX = 0;
+let lensTarget = 0;
+let lensRaf = 0;
+let lensKey = '';
+
+/** The film and frame under a point, in whichever act is held. */
+function hit(x: number): { film: number; frame: number } | null {
+  if (!columns.length) return null;
+  const W = view.clientWidth;
+  const s1 = toSpectrum(progress);
+  if (s1 === 1) {
+    const c = spectrum[clamp(Math.floor((x / W) * spectrum.length), 0, spectrum.length - 1)]!;
+    return { film: c.film, frame: c.frame };
+  }
+  const P = panels(W);
+  const film = Math.max(0, P.findIndex((p) => x >= p.x && x < p.x + p.w));
+  const n = filmModels[film]?.frames.length ?? 1;
+  return { film, frame: clamp(Math.floor(((x - P[film]!.x) / P[film]!.w) * n), 0, n - 1) };
+}
+
+function moveLens(): void {
+  lensRaf = 0;
+  lensX = calm() ? lensTarget : lensX + (lensTarget - lensX) * 0.22;
+  const W = view.clientWidth;
+  lens.style.setProperty('--x', `${lensX}px`);
+  const half = (lensCard.offsetWidth || 220) / 2 + 12;
+  lens.style.setProperty('--card-x', `${clamp(lensX, half, W - half)}px`);
+  const h = hit(lensX);
+  const model = h && filmModels[h.film];
+  if (h && model) {
+    const key = `${h.film}:${h.frame}`;
+    if (key !== lensKey) {
+      lensKey = key;
+      showFrame(model, lensFrame, h.frame);
+      lens.style.setProperty('--lens-color', accent(model, h.frame));
+      lensName.textContent = FILMS[h.film]!.title;
+      lensTime.textContent = formatTime(model.frames[h.frame]!.start);
+    }
+  }
+  if (Math.abs(lensTarget - lensX) > 0.5) lensRaf = requestAnimationFrame(moveLens);
+}
+
+function pointAt(x: number): void {
+  lensTarget = clamp(x, 0, view.clientWidth);
+  if (!lens.hasAttribute('data-on')) lensX = lensTarget;
+  lens.dataset.on = '';
+  if (!lensRaf) lensRaf = requestAnimationFrame(moveLens);
+}
+
+const still = () => {
+  const s1 = toSpectrum(progress);
+  return (s1 === 0 || (s1 === 1 && toPlayer(progress) === 0)) && progress < 0.9;
 };
-window.addEventListener('scroll', requestLayout, { passive: true });
-new ResizeObserver(() => {
-  const s = skin();
-  if (s) radius = parseFloat(getComputedStyle(s).borderTopLeftRadius) || 16;
-  requestLayout();
-}).observe(frame);
 
-/** Scroll to where the film has landed in the player. */
-function goToPlayer(instant = false): void {
-  window.scrollTo({ top: stageEnd(), behavior: instant || calm() ? 'auto' : 'smooth' });
-  requestLayout();
+canvas.addEventListener('pointermove', (e) => {
+  lastTouch = performance.now();
+  if (!still()) return;
+  const x = e.clientX - view.getBoundingClientRect().left;
+  pointAt(x);
+  const film = toSpectrum(progress) === 0 ? (hit(x)?.film ?? -1) : -1;
+  if (film !== hoverFilm) {
+    hoverFilm = film;
+    requestDraw();
+  }
+});
+canvas.addEventListener('pointerleave', () => {
+  lastTouch = performance.now();
+  lens.removeAttribute('data-on');
+  hoverFilm = -1;
+  requestDraw();
+});
+canvas.addEventListener('click', (e) => {
+  if (!still()) return;
+  const h = hit(e.clientX - view.getBoundingClientRect().left);
+  const model = h && filmModels[h.film];
+  if (!h || !model) return;
+  hoverFilm = -1;
+  const switching = FILMS[h.film] !== current;
+  if (switching) select(FILMS[h.film]!);
+  watchFrom(model.frames[h.frame]!.start, switching);
+});
+
+// Until someone points at the films, the lens wanders through all four on its own.
+const IDLE_AFTER_MS = 3500;
+let lastTouch = -Infinity;
+let idleRaf = 0;
+let idleStart = 0;
+function idle(now: number): void {
+  idleRaf = 0;
+  if (calm() || progress > 0.01 || document.hidden || !columns.length) return;
+  idleRaf = requestAnimationFrame(idle);
+  if (now - lastTouch < IDLE_AFTER_MS) return;
+  if (!idleStart) idleStart = now;
+  const t = (now - idleStart) / 1000;
+  const p = 0.5 - 0.42 * Math.cos(t * 0.16) + 0.04 * Math.sin(t * 0.47);
+  pointAt(p * view.clientWidth);
 }
+function startIdle(): void {
+  if (!idleRaf) idleRaf = requestAnimationFrame(idle);
+}
+document.addEventListener('visibilitychange', startIdle);
 
-// After a click on a moment, play from there once the film has landed, so the poster's fold is seen.
+// ---------------------------------------------------------------- Landing: the poster folds into the timeline
+
 let pending: (() => void) | null = null;
 let pendingTimer = 0;
+let autoplayed = false;
+let userPaused = false;
+let ourPause = false;
+
 function runPending(): void {
   const run = pending;
   pending = null;
   window.clearTimeout(pendingTimer);
   run?.();
 }
-function watchFrom(time: number): void {
+
+/** Scroll to where the frames land in the player. */
+function goToPlayer(instant = false): void {
+  window.scrollTo({ top: stageEnd(), behavior: instant || calm() ? 'auto' : 'smooth' });
+  requestDraw();
+}
+
+/** A click on a moment: land, then play from there with sound. */
+function watchFrom(time: number, newSource = false): void {
   const m = media();
   if (!m) return;
-  const seek = () => (m.currentTime = Math.max(0, time - 0.5));
-  if (m.readyState >= 1) seek();
-  else m.addEventListener('loadedmetadata', seek, { once: true });
-  pending = () => void m.play().catch(() => undefined);
-  pendingTimer = window.setTimeout(runPending, 1800);
+  const at = Math.max(0, time - 0.5);
+  const seek = () => {
+    if (Math.abs(m.currentTime - at) > 1) m.currentTime = at;
+  };
+  // A just-switched film still reports the old source as ready, so wait for the new one.
+  if (m.readyState >= 1 && !newSource) seek();
+  else {
+    m.addEventListener('loadedmetadata', seek, { once: true });
+    m.addEventListener('canplay', seek, { once: true });
+  }
+  pending = () => {
+    m.muted = false;
+    void m.play().catch(() => undefined);
+  };
+  pendingTimer = window.setTimeout(runPending, 2600);
   goToPlayer();
 }
 
-// Keyboard users who tab into the player while the film still covers it are taken to it.
+function landed(): void {
+  if (pending) return runPending();
+  const m = media();
+  // Arriving by scroll starts the film muted, so the poster folds into the timeline the moment the frames land.
+  if (!m || calm() || autoplayed || userPaused || !m.paused) return;
+  autoplayed = true;
+  m.muted = true;
+  void m.play().catch(() => undefined);
+}
+
+function leftPlayer(): void {
+  const m = media();
+  if (m && autoplayed && m.muted && !m.paused) {
+    ourPause = true;
+    m.pause();
+  }
+  autoplayed = false;
+}
+
+// A pause from the viewer, not from leaving the player, stops the muted start for good.
+player.addEventListener(
+  'pause',
+  () => {
+    if (!ourPause && progress > 0.9) userPaused = true;
+    ourPause = false;
+  },
+  true
+);
+
+// Keyboard users who tab into the player while the frames still cover it are taken to it.
 pin.addEventListener('focusin', (e) => {
   if (progress < 0.99 && !(e.target as Element).closest('.stage-view')) goToPlayer(true);
 });
@@ -227,137 +540,56 @@ $('.skip').addEventListener('click', (e) => {
   player.querySelector<HTMLElement>('[tabindex]')?.focus({ preventScroll: true });
 });
 
-// ---------------------------------------------------------------- The lens: move across the film to see its moments
+// ---------------------------------------------------------------- The four films, under the player
 
-const lens = $('.hero-lens');
-const lensFrame = $('.hero-lens-frame');
-const lensCard = $('.hero-lens-card');
-const lensScene = $('.hero-lens-scene');
-const lensTime = $('.hero-lens-time');
-
-// The lens follows the pointer with a little lag, so it feels like moving through the film rather than jumping.
-let lensTarget = 0;
-let lensX = 0;
-let lensFrameIndex = -1;
-let lensRaf = 0;
-function moveLens(): void {
-  lensX = calm() ? lensTarget : lensX + (lensTarget - lensX) * 0.22;
-  const width = heroFilm.clientWidth;
-  lens.style.setProperty('--x', `${lensX}px`);
-  const half = (lensCard.offsetWidth || 220) / 2 + 12;
-  lens.style.setProperty('--card-x', `${Math.max(half, Math.min(width - half, lensX))}px`);
-  hero.style.setProperty('--light-x', `${(lensX / width) * 100}%`);
-  if (heroModel) {
-    const t = (lensX / width) * heroModel.duration;
-    const f = heroModel.frameAt(t);
-    if (f !== lensFrameIndex) {
-      lensFrameIndex = f;
-      const fr = heroModel.frames[f];
-      if (fr?.w && fr.h) lensFrame.style.aspectRatio = `${fr.w} / ${fr.h}`;
-      showFrame(heroModel, lensFrame, f);
-      lens.style.setProperty('--lens-color', accent(heroModel, f));
-      const scene = heroModel.scenes[heroModel.sceneAt(t)];
-      lensScene.textContent = scene ? scene.title || `Scene ${scene.index + 1}` : '';
-    }
-    lensTime.textContent = formatTime(t);
-  }
-  if (Math.abs(lensTarget - lensX) > 0.5) lensRaf = requestAnimationFrame(moveLens);
-  else lensRaf = 0;
-}
-
-function pointAt(clientX: number): void {
-  const r = heroFilm.getBoundingClientRect();
-  lensTarget = clamp(clientX - r.left, 0, r.width);
-  if (!hero.hasAttribute('data-looking')) {
-    lensX = lensTarget;
-    hero.dataset.looking = '';
-  }
-  if (!lensRaf) lensRaf = requestAnimationFrame(moveLens);
-}
-
-hero.addEventListener('pointermove', (e) => {
-  lastTouch = performance.now();
-  pointAt(e.clientX);
-});
-hero.addEventListener('pointerdown', (e) => {
-  lastTouch = performance.now();
-  pointAt(e.clientX);
-});
-hero.addEventListener('pointerleave', () => {
-  lastTouch = performance.now();
-  delete hero.dataset.looking;
-});
-hero.addEventListener('click', (e) => {
-  if (!heroModel) return;
-  const r = heroFilm.getBoundingClientRect();
-  watchFrom(((e.clientX - r.left) / r.width) * heroModel.duration);
-});
-
-// Until someone moves across the film, the lens wanders through it on its own, so the first seconds already
-// show what the film can do. It stops when a pointer arrives, waits after it leaves, and never runs with
-// reduced motion, off screen, or once the film starts shrinking.
-const IDLE_AFTER_MS = 3500;
-let lastTouch = -Infinity;
-let idleRaf = 0;
-let idleStart = 0;
-function idle(now: number): void {
-  idleRaf = 0;
-  if (calm() || progress > 0.01 || document.hidden || !heroModel) return;
-  idleRaf = requestAnimationFrame(idle);
-  if (now - lastTouch < IDLE_AFTER_MS) return;
-  if (!idleStart) idleStart = now;
-  const t = (now - idleStart) / 1000;
-  // Two slow waves, so the path through the film never looks like a metronome.
-  const p = 0.5 - 0.36 * Math.cos(t * 0.21) + 0.06 * Math.sin(t * 0.53);
-  lensTarget = clamp(p * heroFilm.clientWidth, 0, heroFilm.clientWidth);
-  hero.dataset.looking = '';
-  if (!lensRaf) lensRaf = requestAnimationFrame(moveLens);
-}
-function startIdle(): void {
-  if (!idleRaf) idleRaf = requestAnimationFrame(idle);
-}
-document.addEventListener('visibilitychange', startIdle);
-
-// ---------------------------------------------------------------- Choosing a film (one place, under the player)
-
-const picks = FILMS.map((film) => {
+const pickEls = FILMS.map((film) => {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'pick';
   b.innerHTML = '<canvas aria-hidden="true"></canvas><span></span>';
   b.querySelector('span')!.textContent = film.title;
+  b.setAttribute('aria-label', `${film.title}, ${film.year}. ${film.line}`);
   b.addEventListener('click', () => select(film));
   $('.films-pick').append(b);
   return { film, button: b, canvas: b.querySelector('canvas')! };
 });
+const currentIndex = () => FILMS.indexOf(current);
 
-async function paintPicks(): Promise<void> {
-  await Promise.all(
-    picks.map(async ({ film, canvas }) => {
-      const model = await modelFor(film).catch(() => null);
-      if (!model || model.status !== 'ready') return;
-      const s = sizeOf(canvas);
-      draw(canvas, model.print(s.w, s.h, LIT));
-    })
-  );
+function paintPicks(): void {
+  pickEls.forEach(({ canvas: c }, i) => {
+    const model = filmModels[i];
+    if (!model || model.status !== 'ready') return;
+    const s = sizeOf(c);
+    draw(c, model.print(s.w, s.h, LIT));
+  });
 }
 
 function syncChoice(): void {
-  for (const p of picks) p.button.setAttribute('aria-pressed', String(p.film === current));
-  $('.cap-title').textContent = `${current.title} (${current.year})`;
-  $('.cap-line').textContent = current.line;
+  for (const p of pickEls) p.button.setAttribute('aria-pressed', String(p.film === current));
+  const model = filmModels[currentIndex()];
+  if (model?.status === 'ready') {
+    const stops = model.scenes.map((s) => accent(model, s.face));
+    if (stops.length > 1) document.documentElement.style.setProperty('--film-swatch', `conic-gradient(${[...stops, stops[0]].join(', ')})`);
+    bar.style.setProperty('--bar-chip', accent(model, model.signature()));
+  }
 }
 
 function select(film: Film): void {
   if (film === current) return;
   current = film;
   const m = media();
-  m?.pause();
+  if (m) {
+    ourPause = true;
+    m.pause();
+    m.muted = false;
+  }
+  autoplayed = false;
+  userPaused = false;
   player.setAttribute('content-title', film.title);
   m?.setAttribute('src', `https://stream.mux.com/${film.id}.m3u8`);
   syncChoice();
-  void paintHero(film);
   void paintSteps(film);
+  requestDraw();
 }
 
 // ---------------------------------------------------------------- How it works, drawn from the current film
@@ -429,38 +661,32 @@ async function setLanguage(lang: string): Promise<void> {
 }
 registerI18n('en', tintTranslations.en as never);
 
-const form = $<HTMLFormElement>('.console');
-const langButton = $<HTMLButtonElement>('[popovertarget="lang-menu"]');
-const langMenu = $('#lang-menu');
-const LANG_NAMES: Record<string, string> = { en: 'English', fr: 'Français', ja: '日本語', ar: 'العربية' };
+const panel = $('#test-panel');
+const opener = $<HTMLButtonElement>('.test-open');
+const sheet = matchMedia('(max-width: 700px)');
 
-// Open the language menu next to its button: below if it fits, otherwise above.
-langMenu.addEventListener('toggle', (event) => {
+// Open above its button on a laptop; a bottom sheet on a phone, placed by CSS.
+panel.addEventListener('toggle', (event) => {
   const open = (event as ToggleEvent).newState === 'open';
-  langButton.setAttribute('aria-expanded', String(open));
+  opener.setAttribute('aria-expanded', String(open));
   if (!open) return;
-  const b = langButton.getBoundingClientRect();
-  const m = langMenu.getBoundingClientRect();
-  const below = b.bottom + 8 + m.height <= window.innerHeight;
-  langMenu.style.top = `${below ? b.bottom + 8 : b.top - 8 - m.height}px`;
-  langMenu.style.left = `${clamp(b.left + b.width / 2 - m.width / 2, 12, window.innerWidth - m.width - 12)}px`;
-  langMenu.querySelector<HTMLInputElement>('input:checked')?.focus();
-});
-window.addEventListener('scroll', () => langMenu.matches(':popover-open') && langMenu.hidePopover(), { passive: true });
-langButton.setAttribute('aria-expanded', 'false');
-
-// Arrow keys browse the languages with the menu open; a click, a tap, Enter or Space picks and closes.
-let keyboardPick = false;
-langMenu.addEventListener('keydown', (e) => {
-  keyboardPick = e.key.startsWith('Arrow');
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    langMenu.hidePopover();
-    langButton.focus();
+  if (sheet.matches) {
+    panel.style.removeProperty('top');
+    panel.style.removeProperty('left');
+  } else {
+    const b = opener.getBoundingClientRect();
+    const m = panel.getBoundingClientRect();
+    const barH = bar.getBoundingClientRect().height;
+    panel.style.top = `${Math.max(barH + 8, b.top - 12 - m.height)}px`;
+    panel.style.maxHeight = `${b.top - 12 - Math.max(barH + 8, b.top - 12 - m.height)}px`;
+    panel.style.left = `${clamp(b.right - m.width, 12, window.innerWidth - m.width - 12)}px`;
   }
+  panel.querySelector<HTMLInputElement>('input:checked')?.focus({ preventScroll: true });
 });
-langMenu.addEventListener('pointerdown', () => (keyboardPick = false));
+window.addEventListener('scroll', () => !sheet.matches && panel.matches(':popover-open') && panel.hidePopover(), { passive: true });
+opener.setAttribute('aria-expanded', 'false');
 
+const form = $<HTMLFormElement>('.console');
 form.addEventListener('change', (event) => {
   const input = event.target as HTMLInputElement;
   const on = input.type !== 'checkbox' || input.checked;
@@ -483,7 +709,7 @@ form.addEventListener('change', (event) => {
     case 'motion':
       if (on) root.dataset.tintMotion = 'reduce';
       else delete root.dataset.tintMotion;
-      requestLayout();
+      requestDraw();
       break;
     case 'contrast':
       if (on) frame.dataset.tintContrast = 'more';
@@ -493,40 +719,29 @@ form.addEventListener('change', (event) => {
       if (value === 'brand') frame.style.setProperty('--media-accent-color', BRAND);
       else frame.style.removeProperty('--media-accent-color');
       break;
-    case 'lang': {
+    case 'lang':
       void setLanguage(value);
-      const name = LANG_NAMES[value] ?? value;
-      const now = langButton.querySelector('.lang-now')!;
-      now.textContent = name;
-      now.setAttribute('lang', value);
-      langButton.setAttribute('aria-label', `Player language: ${name}`);
-      if (event.isTrusted && !keyboardPick) {
-        langMenu.hidePopover();
-        langButton.focus();
-      }
       break;
-    }
   }
 });
 form.addEventListener('submit', (e) => e.preventDefault());
 
 // ---------------------------------------------------------------- The bar marks the section you are reading
 
-const dockLinks = [...document.querySelectorAll<HTMLAnchorElement>('.dock-links a')];
+const barLinks = [...document.querySelectorAll<HTMLAnchorElement>('.bar-links a[data-section]')];
 const sections: [string, HTMLElement][] = [
-  ['watch', $('#test')],
   ['how', $('#how')],
   ['care', $('#care')],
   ['install', $('#install')],
 ];
 function markSection(): void {
   const mid = window.innerHeight / 2;
-  let id: string | null = progress > 0.5 && stage.getBoundingClientRect().bottom > mid ? 'watch' : null;
+  let id: string | null = progress > 0.9 && stage.getBoundingClientRect().bottom > mid ? 'watch' : null;
   for (const [name, el] of sections) {
     const r = el.getBoundingClientRect();
     if (r.top <= mid && r.bottom > mid) id = name;
   }
-  for (const a of dockLinks) {
+  for (const a of barLinks) {
     if (a.dataset.section === id) a.setAttribute('aria-current', 'true');
     else a.removeAttribute('aria-current');
   }
@@ -534,40 +749,37 @@ function markSection(): void {
 
 // ---------------------------------------------------------------- Copy the snippet
 
-const copy = $<HTMLButtonElement>('.code-copy');
-copy.addEventListener('click', async () => {
+const copyButton = $<HTMLButtonElement>('.code-copy');
+copyButton.addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText($('.code code').textContent ?? '');
-    copy.textContent = 'Copied';
+    copyButton.textContent = 'Copied';
   } catch {
-    copy.textContent = 'Press Ctrl+C';
+    copyButton.textContent = 'Press Ctrl+C';
   }
-  window.setTimeout(() => (copy.textContent = 'Copy'), 1600);
+  window.setTimeout(() => (copyButton.textContent = 'Copy'), 1600);
 });
 
 // ---------------------------------------------------------------- Start
 
 syncChoice();
-void paintHero(current);
-void paintPicks();
-void paintSteps(current);
-layoutStage();
-
-// Repaint when the screen size changes.
-let resizeFrame = 0;
-let lastSize = '';
-new ResizeObserver(() => {
-  const size = `${view.clientWidth}x${view.clientHeight}`;
-  if (size === lastSize) return;
-  const widthChanged = lastSize.split('x')[0] !== String(view.clientWidth);
-  lastSize = size;
-  cancelAnimationFrame(resizeFrame);
-  resizeFrame = requestAnimationFrame(() => {
-    void paintHero(current);
-    if (widthChanged) {
-      void paintPicks();
-      void paintSteps(current);
+FILMS.forEach((film, i) => {
+  void modelFor(film).then((model) => {
+    filmModels[i] = model;
+    if (film === current) {
+      syncChoice();
+      void paintSteps(film);
     }
-    requestLayout();
+    paintPicks();
+    buildColumns();
   });
+});
+render();
+
+let lastWidth = 0;
+new ResizeObserver(() => {
+  if (view.clientWidth === lastWidth) return;
+  lastWidth = view.clientWidth;
+  paintPicks();
+  void paintSteps(current);
 }).observe(view);
