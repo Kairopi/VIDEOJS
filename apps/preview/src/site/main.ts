@@ -267,7 +267,11 @@ async function paintChoices(): Promise<void> {
 
 function syncChoice(): void {
   for (const b of heroButtons) b.button.setAttribute('aria-pressed', String(b.film === current));
-  for (const b of wallBands) b.button.toggleAttribute('data-current', b.film === current);
+  for (const b of wallBands) {
+    b.button.toggleAttribute('data-current', b.film === current);
+    if (b.film === current) b.button.setAttribute('aria-current', 'true');
+    else b.button.removeAttribute('aria-current');
+  }
   $('.watch-film').textContent = current.title;
   $('.watch-line').textContent = current.line;
 }
