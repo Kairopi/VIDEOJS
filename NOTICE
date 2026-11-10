@@ -1,0 +1,20 @@
+Tint
+Copyright 2026 Kairopi
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It includes or is derived from the following third-party work:
+
+Video.js v10 (https://github.com/videojs/v10)
+  Copyright Brightcove, Inc., Mux, Inc., and Video.js contributors.
+  Apache License 2.0. The project scaffold, workbench (apps/preview) and the base
+  styles in src/styles come from `npx @videojs/cli skin create`.
+
+Mona Sans (https://github.com/github/mona-sans)
+  Copyright GitHub, Inc. SIL Open Font License 1.1.
+  Loaded by the demo pages from Google Fonts; not bundled.
+
+Films shown in the demo pages, streamed from Mux and not included in this repository:
+  Sprite Fright (2021), Spring (2019), Coffee Run (2020), Charge (2022)
+  by Blender Studio / Blender Foundation (https://studio.blender.org).
+  Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/).
