@@ -1,0 +1,286 @@
+<media-container class="media-skin media-container media-video tint" data-theme="tint" data-preset="video" data-tint-state="poster">
+<!-- Add a compatible media component here. -->
+<media-poster class="media-poster">
+<img alt="" decoding="async" class="media-poster-image">
+</media-poster>
+<tint-print class="tint-print"></tint-print>
+<div class="tint-intro">
+<media-title class="tint-title"></media-title>
+<p class="tint-meta">
+<media-time class="tint-meta-duration" type="duration"></media-time>
+<tint-scene-count class="tint-meta-scenes"></tint-scene-count>
+</p>
+<media-play-button class="tint-start">
+<media-icon family="tint" name="play" class="tint-start-icon tint-when-fresh"></media-icon>
+<media-icon family="tint" name="restart" class="tint-start-icon tint-when-ended"></media-icon>
+<media-text token="buttons.play" class="tint-start-label tint-when-fresh">Play</media-text>
+<media-text token="buttons.replay" class="tint-start-label tint-when-ended">Replay</media-text>
+</media-play-button>
+</div>
+<media-error-dialog>
+<media-dialog-backdrop class="tint-dialog-backdrop"></media-dialog-backdrop>
+<media-dialog-popup class="tint-dialog">
+<media-dialog-title class="tint-dialog-title"></media-dialog-title>
+<media-dialog-description class="tint-dialog-description"></media-dialog-description>
+<media-dialog-close class="tint-pill tint-dialog-close"></media-dialog-close>
+</media-dialog-popup>
+</media-error-dialog>
+<media-controls>
+<media-controls-backdrop class="tint-scrim"></media-controls-backdrop>
+<media-controls-content class="tint-controls">
+<media-tooltip-group>
+<div class="tint-bar">
+<media-time-slider class="tint-timeline" thumb-alignment="center">
+<media-slider-track class="tint-track" data-tint-fold-target>
+<tint-track class="tint-track-print"></tint-track>
+<media-slider-buffer class="tint-buffer"></media-slider-buffer>
+<media-buffering-indicator class="tint-sweep"></media-buffering-indicator>
+</media-slider-track>
+<media-slider-thumb class="tint-head"></media-slider-thumb>
+<media-slider-preview class="tint-preview" overflow="clamp">
+<media-slider-thumbnail class="tint-preview-frame">
+<img alt="" aria-hidden="true" decoding="async" class="tint-preview-image">
+</media-slider-thumbnail>
+<span class="tint-preview-meta">
+<span class="tint-preview-scene" data-tint-pointer-scene></span>
+<media-slider-value class="tint-preview-time" type="pointer"></media-slider-value>
+</span>
+</media-slider-preview>
+</media-time-slider>
+<media-controls-group class="tint-row">
+<media-controls-group class="tint-group tint-group-start">
+<media-play-button class="tint-button tint-play" id="tint-play-trigger">
+<media-icon family="tint" name="play" class="tint-icon tint-play-icon"></media-icon>
+<media-icon family="tint" name="pause" class="tint-icon tint-pause-icon"></media-icon>
+<media-icon family="tint" name="restart" class="tint-icon tint-restart-icon"></media-icon>
+</media-play-button>
+<media-tooltip trigger="tint-play-trigger" side="top" class="media-popup tint-tooltip">
+<media-tooltip-label></media-tooltip-label>
+<media-tooltip-shortcut class="tint-tooltip-key"></media-tooltip-shortcut>
+</media-tooltip>
+<div class="tint-volume">
+<media-mute-button class="tint-button tint-mute" id="tint-mute-trigger">
+<media-icon family="tint" name="volume-high" class="tint-icon tint-volume-high-icon"></media-icon>
+<media-icon family="tint" name="volume-low" class="tint-icon tint-volume-low-icon"></media-icon>
+<media-icon family="tint" name="volume-off" class="tint-icon tint-volume-off-icon"></media-icon>
+</media-mute-button>
+<media-tooltip trigger="tint-mute-trigger" side="top" class="media-popup tint-tooltip">
+<media-tooltip-label></media-tooltip-label>
+<media-tooltip-shortcut class="tint-tooltip-key"></media-tooltip-shortcut>
+</media-tooltip>
+<media-volume-slider class="tint-volume-slider" orientation="horizontal" thumb-alignment="edge">
+<media-slider-track class="tint-volume-track">
+<media-slider-fill class="tint-volume-fill"></media-slider-fill>
+</media-slider-track>
+<media-slider-thumb class="tint-volume-thumb"></media-slider-thumb>
+</media-volume-slider>
+</div>
+<media-time-group class="tint-time">
+<media-time class="tint-time-current" type="current"></media-time>
+<media-time-separator class="tint-time-separator"></media-time-separator>
+<media-time class="tint-time-duration" type="duration"></media-time>
+</media-time-group>
+<tint-scene-chip class="tint-chip"></tint-scene-chip>
+</media-controls-group>
+<media-controls-group class="tint-group tint-group-end">
+<media-captions-button class="tint-button tint-captions" id="tint-captions-trigger">
+<media-icon family="tint" name="captions-off" class="tint-icon tint-captions-off-icon"></media-icon>
+<media-icon family="tint" name="captions-on" class="tint-icon tint-captions-on-icon"></media-icon>
+</media-captions-button>
+<media-tooltip trigger="tint-captions-trigger" side="top" class="media-popup tint-tooltip">
+<media-tooltip-label></media-tooltip-label>
+<media-tooltip-shortcut class="tint-tooltip-key"></media-tooltip-shortcut>
+</media-tooltip>
+<button type="button" commandfor="tint-scenes-popup" class="tint-button tint-scenes-button" id="tint-scenes-trigger">
+<media-icon family="tint" name="scenes" class="tint-icon"></media-icon>
+<media-text token="tint.scenesMenu" class="tint-visually-hidden">Scenes</media-text>
+</button>
+<media-tooltip trigger="tint-scenes-trigger" side="top" class="media-popup tint-tooltip">
+<media-text token="tint.scenesMenu">Scenes</media-text>
+<kbd class="tint-tooltip-key">[ ]</kbd>
+</media-tooltip>
+<media-menu side="top" align="end" class="media-popup tint-menu tint-scenes-menu" id="tint-scenes-popup">
+<media-menu-content class="tint-menu-content">
+<tint-scenes class="tint-scenes"></tint-scenes>
+</media-menu-content>
+</media-menu>
+<button type="button" commandfor="tint-settings-popup" class="tint-button tint-settings-button" id="tint-settings-trigger">
+<media-icon family="tint" name="gear" class="tint-icon"></media-icon>
+<media-text token="menu.settings" class="tint-visually-hidden">Settings</media-text>
+</button>
+<media-tooltip trigger="tint-settings-trigger" side="top" class="media-popup tint-tooltip">
+<media-text token="menu.settings">Settings</media-text>
+</media-tooltip>
+<media-menu side="top" align="end" class="media-popup tint-menu" id="tint-settings-popup">
+<media-menu-content class="tint-menu-content">
+<media-menu-item commandfor="tint-speed-content" class="tint-menu-item">
+<media-icon family="tint" name="speed" class="tint-menu-icon"></media-icon>
+<media-text token="menu.speed">Speed</media-text>
+<span class="tint-menu-hint"><span data-part="value" class="tint-menu-hint-label"></span><media-icon family="tint" name="chevron" class="tint-menu-chevron"></media-icon></span>
+</media-menu-item>
+<media-menu-content class="tint-menu-content" id="tint-speed-content">
+<media-menu-item class="tint-menu-back">
+<media-icon family="tint" name="chevron" class="tint-menu-back-chevron"></media-icon>
+<media-text token="menu.speed">Speed</media-text>
+</media-menu-item>
+<media-playback-rate-radio-group class="tint-menu-group">
+<template>
+<media-menu-radio-item class="tint-menu-radio">
+<span data-part="label"></span>
+<media-menu-item-indicator force-mount class="tint-menu-check">
+<media-icon family="tint" name="check" class="tint-menu-check-icon"></media-icon>
+</media-menu-item-indicator>
+</media-menu-radio-item>
+</template>
+</media-playback-rate-radio-group>
+</media-menu-content>
+<media-menu-item commandfor="tint-quality-content" class="tint-menu-item">
+<media-icon family="tint" name="switches" class="tint-menu-icon"></media-icon>
+<media-text token="menu.quality">Quality</media-text>
+<span class="tint-menu-hint"><span data-part="value" class="tint-menu-hint-label"></span><media-icon family="tint" name="chevron" class="tint-menu-chevron"></media-icon></span>
+</media-menu-item>
+<media-menu-content class="tint-menu-content" id="tint-quality-content">
+<media-menu-item class="tint-menu-back">
+<media-icon family="tint" name="chevron" class="tint-menu-back-chevron"></media-icon>
+<media-text token="menu.quality">Quality</media-text>
+</media-menu-item>
+<media-quality-radio-group class="tint-menu-group">
+<template>
+<media-menu-radio-item class="tint-menu-radio">
+<span><span data-part="label"></span><sup data-part="tier" class="tint-menu-tier"></sup></span>
+<span data-part="badge" class="tint-menu-badge"></span>
+<media-menu-item-indicator force-mount class="tint-menu-check">
+<media-icon family="tint" name="check" class="tint-menu-check-icon"></media-icon>
+</media-menu-item-indicator>
+</media-menu-radio-item>
+</template>
+</media-quality-radio-group>
+</media-menu-content>
+<media-menu-item commandfor="tint-captions-content" class="tint-menu-item">
+<media-icon family="tint" name="captions-off" class="tint-menu-icon"></media-icon>
+<media-text token="menu.captions">Captions</media-text>
+<span class="tint-menu-hint"><span data-part="value" class="tint-menu-hint-label"></span><media-icon family="tint" name="chevron" class="tint-menu-chevron"></media-icon></span>
+</media-menu-item>
+<media-menu-content class="tint-menu-content" id="tint-captions-content">
+<media-menu-item class="tint-menu-back">
+<media-icon family="tint" name="chevron" class="tint-menu-back-chevron"></media-icon>
+<media-text token="menu.captions">Captions</media-text>
+</media-menu-item>
+<media-captions-radio-group class="tint-menu-group">
+<template>
+<media-menu-radio-item class="tint-menu-radio">
+<span data-part="label"></span>
+<span data-part="badge" class="tint-menu-badge"></span>
+<media-menu-item-indicator force-mount class="tint-menu-check">
+<media-icon family="tint" name="check" class="tint-menu-check-icon"></media-icon>
+</media-menu-item-indicator>
+</media-menu-radio-item>
+</template>
+</media-captions-radio-group>
+</media-menu-content>
+<media-menu-item commandfor="tint-audio-content" class="tint-menu-item">
+<media-icon family="tint" name="speech" class="tint-menu-icon"></media-icon>
+<media-text token="menu.audio">Audio</media-text>
+<span class="tint-menu-hint"><span data-part="value" class="tint-menu-hint-label"></span><media-icon family="tint" name="chevron" class="tint-menu-chevron"></media-icon></span>
+</media-menu-item>
+<media-menu-content class="tint-menu-content" id="tint-audio-content">
+<media-menu-item class="tint-menu-back">
+<media-icon family="tint" name="chevron" class="tint-menu-back-chevron"></media-icon>
+<media-text token="menu.audio">Audio</media-text>
+</media-menu-item>
+<media-audio-track-radio-group class="tint-menu-group">
+<template>
+<media-menu-radio-item class="tint-menu-radio">
+<span data-part="label"></span>
+<media-menu-item-indicator force-mount class="tint-menu-check">
+<media-icon family="tint" name="check" class="tint-menu-check-icon"></media-icon>
+</media-menu-item-indicator>
+</media-menu-radio-item>
+</template>
+</media-audio-track-radio-group>
+</media-menu-content>
+</media-menu-content>
+</media-menu>
+<media-airplay-button class="tint-button tint-airplay" id="tint-airplay-trigger">
+<media-icon family="tint" name="airplay-enter" class="tint-icon tint-airplay-enter-icon"></media-icon>
+<media-icon family="tint" name="airplay-exit" class="tint-icon tint-airplay-exit-icon"></media-icon>
+</media-airplay-button>
+<media-tooltip trigger="tint-airplay-trigger" side="top" class="media-popup tint-tooltip">
+<media-tooltip-label></media-tooltip-label>
+</media-tooltip>
+<media-cast-button class="tint-button tint-cast" id="tint-cast-trigger">
+<media-icon family="tint" name="cast-enter" class="tint-icon tint-cast-enter-icon"></media-icon>
+<media-icon family="tint" name="cast-exit" class="tint-icon tint-cast-exit-icon"></media-icon>
+</media-cast-button>
+<media-tooltip trigger="tint-cast-trigger" side="top" class="media-popup tint-tooltip">
+<media-tooltip-label></media-tooltip-label>
+</media-tooltip>
+<media-pip-button class="tint-button tint-pip" id="tint-pip-trigger">
+<media-icon family="tint" name="pip-enter" class="tint-icon tint-pip-enter-icon"></media-icon>
+<media-icon family="tint" name="pip-exit" class="tint-icon tint-pip-exit-icon"></media-icon>
+</media-pip-button>
+<media-tooltip trigger="tint-pip-trigger" side="top" class="media-popup tint-tooltip">
+<media-tooltip-label></media-tooltip-label>
+<media-tooltip-shortcut class="tint-tooltip-key"></media-tooltip-shortcut>
+</media-tooltip>
+<media-fullscreen-button class="tint-button tint-fullscreen" id="tint-fullscreen-trigger">
+<media-icon family="tint" name="fullscreen-enter" class="tint-icon tint-fullscreen-enter-icon"></media-icon>
+<media-icon family="tint" name="fullscreen-exit" class="tint-icon tint-fullscreen-exit-icon"></media-icon>
+</media-fullscreen-button>
+<media-tooltip trigger="tint-fullscreen-trigger" side="top" class="media-popup tint-tooltip">
+<media-tooltip-label></media-tooltip-label>
+<media-tooltip-shortcut class="tint-tooltip-key"></media-tooltip-shortcut>
+</media-tooltip>
+</media-controls-group>
+</media-controls-group>
+</div>
+</media-tooltip-group>
+</media-controls-content>
+</media-controls>
+<media-hotkey keys="Space" action="togglePaused"></media-hotkey>
+<media-hotkey keys="k" action="togglePaused"></media-hotkey>
+<media-hotkey keys="m" action="toggleMuted"></media-hotkey>
+<media-hotkey keys="ArrowRight" action="seekStep" value="5"></media-hotkey>
+<media-hotkey keys="ArrowLeft" action="seekStep" value="-5"></media-hotkey>
+<media-hotkey keys="l" action="seekStep" value="10"></media-hotkey>
+<media-hotkey keys="j" action="seekStep" value="-10"></media-hotkey>
+<media-hotkey keys="ArrowUp" action="volumeStep"></media-hotkey>
+<media-hotkey keys="ArrowDown" action="volumeStep"></media-hotkey>
+<media-hotkey keys="0-9" action="seekToPercent"></media-hotkey>
+<media-hotkey keys="Home" action="seekToPercent" value="0"></media-hotkey>
+<media-hotkey keys="End" action="seekToPercent" value="100"></media-hotkey>
+<media-hotkey keys=">" action="speedUp"></media-hotkey>
+<media-hotkey keys="<" action="speedDown"></media-hotkey>
+<media-hotkey keys="f" action="toggleFullscreen"></media-hotkey>
+<media-hotkey keys="c" action="toggleSubtitles"></media-hotkey>
+<media-hotkey keys="i" action="togglePictureInPicture"></media-hotkey>
+<media-gesture type="tap" action="togglePaused" pointer="mouse" region="center"></media-gesture>
+<media-gesture type="tap" action="toggleControls" pointer="touch"></media-gesture>
+<media-gesture type="doubletap" action="seekStep" value="-10" region="left"></media-gesture>
+<media-gesture type="doubletap" action="toggleFullscreen" region="center"></media-gesture>
+<media-gesture type="doubletap" action="seekStep" value="10" region="right"></media-gesture>
+<media-status-announcer class="tint-visually-hidden"></media-status-announcer>
+<div aria-hidden="true" class="tint-indicators">
+<media-volume-indicator class="tint-indicator tint-volume-indicator">
+<media-volume-indicator-fill class="tint-volume-indicator-fill">
+<media-icon family="tint" name="volume-high" class="tint-indicator-icon tint-level-high"></media-icon>
+<media-icon family="tint" name="volume-low" class="tint-indicator-icon tint-level-low"></media-icon>
+<media-icon family="tint" name="volume-off" class="tint-indicator-icon tint-level-off"></media-icon>
+<media-volume-indicator-value class="tint-indicator-value"></media-volume-indicator-value>
+</media-volume-indicator-fill>
+</media-volume-indicator>
+<media-status-indicator actions="toggleSubtitles,toggleFullscreen,togglePictureInPicture" class="tint-indicator tint-status-indicator">
+<media-icon family="tint" name="captions-on" class="tint-indicator-icon tint-status-captions-on"></media-icon>
+<media-icon family="tint" name="captions-off" class="tint-indicator-icon tint-status-captions-off"></media-icon>
+<media-icon family="tint" name="fullscreen-enter" class="tint-indicator-icon tint-status-fullscreen"></media-icon>
+<media-icon family="tint" name="fullscreen-exit" class="tint-indicator-icon tint-status-exit-fullscreen"></media-icon>
+<media-icon family="tint" name="pip-enter" class="tint-indicator-icon tint-status-pip"></media-icon>
+<media-icon family="tint" name="pip-exit" class="tint-indicator-icon tint-status-exit-pip"></media-icon>
+<media-status-indicator-value class="tint-indicator-value"></media-status-indicator-value>
+</media-status-indicator>
+<media-seek-indicator class="tint-indicator tint-seek-indicator">
+<media-icon family="tint" name="chevron" class="tint-indicator-icon tint-seek-icon"></media-icon>
+<media-seek-indicator-value class="tint-indicator-value"></media-seek-indicator-value>
+</media-seek-indicator>
+</div>
+</media-container>
