@@ -563,6 +563,22 @@
       box-shadow: 0 0 0 2px var(--tint-pointer-color, var(--tint-accent)), 0 12px 30px rgb(0 0 0 / 0.5);
     }
     .tint-preview-frame[data-hidden] { display: none; }
+
+    /* The bloom: the fingerprint opens into frames under the pointer. When it can, it replaces the floating preview
+       frame, and the time and scene ride just above the frame you will land on. */
+    .tint-bloom {
+      position: absolute;
+      z-index: 1;
+      display: block;
+      pointer-events: none;
+    }
+    .tint-bloom-canvas { display: block; width: 100%; height: 100%; }
+    .tint-bloom:not([data-open]) { visibility: hidden; }
+    :scope[data-tint-bloom] .tint-preview-frame { display: none; }
+    :scope[data-tint-bloom] .tint-preview { bottom: calc(100% + var(--tint-bloom-lift, 0px)); }
+    :scope[data-tint-bloom] .tint-timeline:is([data-pointing], [data-dragging], :focus-within) .tint-track { opacity: 0; }
+    .tint-track { transition: height var(--tint-duration) var(--tint-ease-out), border-radius var(--tint-duration) var(--tint-ease-out), opacity var(--tint-duration-fast) ease; }
+    @media (forced-colors: active) { .tint-bloom { display: none; } :scope[data-tint-bloom] .tint-preview-frame { display: block; } }
     .tint-preview-image { display: block; }
 
     .tint-preview-meta {

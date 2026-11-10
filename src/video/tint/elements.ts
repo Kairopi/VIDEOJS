@@ -421,6 +421,252 @@ export class TintTrackElement extends UIElement {
   };
 }
 
+/**
+ * <tint-bloom>: the fingerprint opens into the film under your pointer.
+ *
+ * Every stripe in the timeline is one frame squeezed thin. While you point at, drag or step through the timeline, the
+ * stripes near that moment widen and rise back into the frames they came from, and the rest of the film squeezes
+ * aside. The magnification is a one-dimensional graphical fisheye (Sarkar & Brown, 1992): the frame under the pointer
+ * stays exactly under the pointer, so what you see is where you will land. Frames already watched are lit, the rest
+ * dimmed, as on the track.
+ */
+export class TintBloomElement extends UIElement {
+  static readonly tagName = 'tint-bloom';
+
+  #time = new PlayerController(this, playerContext, selectTime);
+  #model: TintModel | null = null;
+  #canvas = document.createElement('canvas');
+  #slider: HTMLElement | null = null;
+  #track: HTMLElement | null = null;
+  #sprites = new Map<string, { lit: HTMLCanvasElement; dim: HTMLCanvasElement }>();
+  #open = 0;
+  #want = 0;
+  #focus = 0;
+  #keys = false;
+  #keyTimer = 0;
+  #raf = 0;
+  #disconnect: AbortController | null = null;
+  #watch: MutationObserver | null = null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.setAttribute('aria-hidden', 'true');
+    this.#canvas.className = 'tint-bloom-canvas';
+    this.replaceChildren(this.#canvas);
+
+    const container = containerOf(this);
+    this.#slider = this.closest('media-time-slider');
+    this.#track = this.#slider?.querySelector('media-slider-track') ?? null;
+    if (!container || !this.#slider) return;
+    this.#model = getModel(container);
+
+    this.#disconnect = new AbortController();
+    const { signal } = this.#disconnect;
+    const onModel = () => {
+      this.#sprites.clear();
+      container.toggleAttribute('data-tint-bloom', this.#model?.status === 'ready');
+    };
+    this.#model.addEventListener('change', onModel, { signal });
+    onModel();
+
+    // Open while the timeline is pointed at or dragged; Video.js marks both on the slider.
+    this.#watch = new MutationObserver(() => this.#sync());
+    this.#watch.observe(this.#slider, { attributes: true, attributeFilter: ['data-pointing', 'data-dragging'] });
+    // Keyboard users get the same view: each step opens the strip around the current time for a moment.
+    this.#slider.addEventListener(
+      'keydown',
+      (e) => {
+        if (!/^(Arrow|Home|End|Page|\d)/.test(e.key)) return;
+        this.#keys = true;
+        window.clearTimeout(this.#keyTimer);
+        this.#keyTimer = window.setTimeout(() => ((this.#keys = false), this.#sync()), 1400);
+        this.#sync();
+      },
+      // Capture, so the player's own key handling can't swallow the step before we see it.
+      { signal, capture: true }
+    );
+    this.#slider.addEventListener('focusout', () => ((this.#keys = false), this.#sync()), { signal });
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#disconnect?.abort();
+    this.#disconnect = null;
+    this.#watch?.disconnect();
+    this.#watch = null;
+    cancelAnimationFrame(this.#raf);
+    window.clearTimeout(this.#keyTimer);
+  }
+
+  #sync(): void {
+    const s = this.#slider;
+    const active = Boolean(s && (s.hasAttribute('data-pointing') || s.hasAttribute('data-dragging') || this.#keys));
+    this.#want = active && this.#model?.status === 'ready' && !s?.hasAttribute('data-disabled') ? 1 : 0;
+    if (!this.#raf) this.#raf = requestAnimationFrame(this.#tick);
+  }
+
+  #alive = false;
+  #keepAlive(): void {
+    this.#alive = true;
+  }
+
+  #tick = (): void => {
+    this.#raf = 0;
+    const calm = reducedMotion(this);
+    this.#open = calm ? this.#want : this.#open + (this.#want - this.#open) * 0.24;
+    if (Math.abs(this.#want - this.#open) < 0.004) this.#open = this.#want;
+    this.#alive = false;
+    this.#draw();
+    // Keep drawing while open, so the bloom follows the pointer and the playhead.
+    if (this.#open > 0 || this.#want > 0 || this.#alive) this.#raf = requestAnimationFrame(this.#tick);
+  };
+
+  /** The storyboard image lit or dimmed once, so each frame is a plain copy. */
+  #sprite(url: string): { lit: HTMLCanvasElement; dim: HTMLCanvasElement } | null {
+    let s = this.#sprites.get(url);
+    if (s) return s;
+    const img = this.#model?.image(url);
+    if (!img?.naturalWidth) return null;
+    const make = (filter: string) => {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const g = c.getContext('2d')!;
+      g.filter = filter;
+      g.drawImage(img, 0, 0);
+      return c;
+    };
+    s = { lit: make(LIT), dim: make(DIM) };
+    this.#sprites.set(url, s);
+    return s;
+  }
+
+  #draw(): void {
+    const model = this.#model;
+    const slider = this.#slider;
+    const track = this.#track;
+    if (!model || model.status !== 'ready' || !slider || !track) return;
+    const open = this.#open;
+    this.toggleAttribute('data-open', open > 0.01);
+    if (open <= 0.01) return;
+
+    const s = slider.getBoundingClientRect();
+    const t = track.getBoundingClientRect();
+    const player = containerOf(this)?.getBoundingClientRect();
+    const W = t.width;
+    const H = Math.round(Math.min(124, Math.max(54, (player?.height ?? 300) * 0.24)));
+    const base = Math.max(1, t.height);
+    // Sit on the track and rise from it; lift the time label above the tallest frame.
+    this.style.left = `${t.left - s.left}px`;
+    this.style.width = `${W}px`;
+    this.style.height = `${H}px`;
+    this.style.bottom = `${s.bottom - t.bottom}px`;
+
+    const k = dpr();
+    if (this.#canvas.width !== Math.round(W * k) || this.#canvas.height !== Math.round(H * k)) {
+      this.#canvas.width = Math.round(W * k);
+      this.#canvas.height = Math.round(H * k);
+    }
+    const g = this.#canvas.getContext('2d')!;
+    g.setTransform(k, 0, 0, k, 0, 0);
+    g.clearRect(0, 0, W, H);
+    this.#canvas.style.opacity = String(Math.min(1, open * 1.6));
+
+    // Where we are looking: the pointer while pointing or dragging, otherwise the playhead.
+    const css = getComputedStyle(slider);
+    const pointing = slider.hasAttribute('data-pointing') || slider.hasAttribute('data-dragging');
+    const raw = parseFloat(css.getPropertyValue(pointing ? '--media-slider-pointer' : '--media-slider-fill'));
+    const n = model.frames.length;
+    const unit = W / n;
+    const rawU = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw / 100)) : this.#focus;
+    const focusIndex = Math.min(n - 1, Math.floor(rawU * n));
+    // The lens centres on the frame you are pointing at, gliding from frame to frame rather than jumping.
+    const centre = (focusIndex + 0.5) / n;
+    const glide = reducedMotion(this) || open < 0.05 ? 1 : 0.35;
+    this.#focus += (centre - this.#focus) * glide;
+    if (Math.abs(centre - this.#focus) > 0.0005) this.#keepAlive();
+    const c = this.#focus;
+
+    // A fisheye lens of fixed reach (Sarkar & Brown): the frame at its centre grows most, its neighbours less and less,
+    // and stripes beyond its reach keep their place, so only the part of the film you are looking at opens.
+    const f0 = model.frames[focusIndex]!;
+    const aspect = f0.w && f0.h ? f0.w / f0.h : 16 / 9;
+    const target = Math.min(H * aspect, W * 0.24);
+    const reach = Math.min(0.5, (1.6 * target) / W);
+    const d = Math.max(0, (target / unit - 1) * open);
+    const lens = (q: number) => ((d + 1) * q) / (d * q + 1);
+    const fish = (x: number) => {
+      const dx = x - c;
+      const r = dx >= 0 ? Math.min(reach, 1 - c) : Math.min(reach, c);
+      if (r <= 0 || Math.abs(dx) >= r) return x;
+      return c + Math.sign(dx) * r * lens(Math.abs(dx) / r);
+    };
+
+    // First pass: where every frame lands, and how wide the widest one is.
+    const edges = new Float32Array(n + 1);
+    for (let i = 0; i <= n; i++) edges[i] = fish(i / n) * W;
+    let wmax = 0;
+    for (let i = 0; i < n; i++) wmax = Math.max(wmax, edges[i + 1]! - edges[i]!);
+    // Show the frame you will land on whole: the bloom is as tall as that frame's picture, within limits.
+    const top = Math.max(base, Math.min(H, wmax / aspect));
+
+    const now = this.#time.value?.currentTime ?? 0;
+    let focusBox: [number, number, number, number] | null = null;
+    for (let i = 0; i < n; i++) {
+      const x0 = edges[i]!;
+      const w = edges[i + 1]! - x0;
+      const f = model.frames[i]!;
+      const sprite = this.#sprite(f.url);
+      if (sprite && w > 0.05) {
+        const src = f.start < now ? sprite.lit : sprite.dim;
+        // Thin stripes stay track-high; frames rise toward full height as they widen.
+        const grow = wmax > unit * 1.6 ? Math.min(1, Math.max(0, (w - unit * 1.5) / (wmax - unit * 1.5))) : 0;
+        const h = base + (top - base) * grow * grow * (3 - 2 * grow);
+        const y = H - h;
+        const gap = w > 14 ? 1 : 0;
+        if (grow < 1) {
+          // As a stripe: the whole frame squeezed to its width, as in the fingerprint.
+          g.globalAlpha = 1;
+          g.drawImage(src, f.x, f.y, f.w, f.h, x0, y, w + 0.4, h);
+        }
+        if (grow > 0) {
+          // As a frame: the middle of the picture, cropped to the space it has.
+          const box = (w - gap) / h;
+          const fa = f.w / f.h;
+          const sw = box < fa ? f.h * box : f.w;
+          const sh = box < fa ? f.h : f.w / box;
+          g.globalAlpha = grow;
+          g.save();
+          g.beginPath();
+          g.roundRect(x0 + gap / 2, y, w - gap, h, Math.min(6, w / 6) * grow);
+          g.clip();
+          g.drawImage(src, f.x + (f.w - sw) / 2, f.y + (f.h - sh) / 2, sw, sh, x0 + gap / 2, y, w - gap, h);
+          g.restore();
+        }
+        if (i === focusIndex) focusBox = [x0 + gap / 2, y, w - gap, h];
+      }
+    }
+    g.globalAlpha = 1;
+    // The time and scene ride just above the frame you will land on.
+    slider.style.setProperty('--tint-bloom-lift', `${top - (t.bottom - s.top) + 10}px`);
+
+    // The frame you will land on, ringed in its own colour over a dark halo so it reads on any picture.
+    if (focusBox && open > 0.5) {
+      const [x, y, w, h] = focusBox;
+      g.lineWidth = 4;
+      g.strokeStyle = 'rgb(0 0 0 / 0.55)';
+      g.beginPath();
+      g.roundRect(x - 1, y - 1, w + 2, h + 2, 7);
+      g.stroke();
+      g.lineWidth = 2;
+      g.strokeStyle = accentCss(model, focusIndex);
+      g.beginPath();
+      g.roundRect(x - 1, y - 1, w + 2, h + 2, 7);
+      g.stroke();
+    }
+  }
+}
+
 /** <tint-scene-chip>: the current scene's colour swatch and number, in the control row. */
 export class TintSceneChipElement extends UIElement {
   static readonly tagName = 'tint-scene-chip';
@@ -591,7 +837,7 @@ export class TintScenesElement extends UIElement {
 }
 
 export function defineTintElements(): void {
-  for (const element of [TintPrintElement, TintTrackElement, TintSceneChipElement, TintSceneCountElement, TintScenesElement]) {
+  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneChipElement, TintSceneCountElement, TintScenesElement]) {
     if (!customElements.get(element.tagName)) customElements.define(element.tagName, element);
   }
 }

@@ -146,78 +146,53 @@
       <p>Tint is open source under the Apache License 2.0. Made for the Video.js Skins Challenge, 2026.</p>
     </footer>
 
-    <!-- Test the player: one panel, opened from under the player. A bottom sheet on phones. -->
+    <!-- Test the player: a small panel of tiles, opened from under the player. A bottom sheet on phones. -->
     <div class="test-panel" id="test-panel" popover aria-labelledby="test-title">
-      <div class="tp-head">
-        <h2 id="test-title">Test the player</h2>
-        <button class="tp-close" type="button" popovertarget="test-panel" popovertargetaction="hide" aria-label="Close">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-        </button>
-      </div>
+      <h2 id="test-title" class="visually-hidden">Test the player</h2>
       <form class="console">
-        <fieldset class="group">
-          <legend>Screen</legend>
-          <div class="row row-width" role="group" aria-label="Width">
-            <span class="row-name" aria-hidden="true">Width</span>
-            <span class="seg">
-              <label class="opt opt-icon" data-tip="Phone"><input type="radio" name="size" value="phone" aria-label="Phone width" /><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2.5" /><path d="M11 18h2" /></svg></span></label>
-              <label class="opt opt-icon" data-tip="Tablet"><input type="radio" name="size" value="tablet" aria-label="Tablet width" /><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="3" width="15" height="18" rx="2.5" /><path d="M11 18h2" /></svg></span></label>
-              <label class="opt opt-icon" data-tip="Full width"><input type="radio" name="size" value="full" aria-label="Full width" checked /><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M9 20h6M12 16v4" /></svg></span></label>
-            </span>
-          </div>
-          <div class="row row-stack" role="group" aria-label="Shape">
-            <span class="row-name" aria-hidden="true">Shape</span>
-            <span class="seg seg-4">
-              <label class="opt"><input type="radio" name="shape" value="2.39 / 1" aria-label="2.39 to 1" checked /><span><i class="ratio" style="--rw: 20px; --rh: 8px" aria-hidden="true"></i>2.39</span></label>
-              <label class="opt"><input type="radio" name="shape" value="16 / 9" aria-label="16 by 9" /><span><i class="ratio" style="--rw: 17px; --rh: 10px" aria-hidden="true"></i>16:9</span></label>
-              <label class="opt"><input type="radio" name="shape" value="1 / 1" aria-label="Square" /><span><i class="ratio" style="--rw: 11px; --rh: 11px" aria-hidden="true"></i>1:1</span></label>
-              <label class="opt"><input type="radio" name="shape" value="9 / 16" aria-label="Vertical, 9 by 16" /><span><i class="ratio" style="--rw: 8px; --rh: 14px" aria-hidden="true"></i>9:16</span></label>
-            </span>
-          </div>
-        </fieldset>
+        <div class="cc-seg cc-shape" role="group" aria-label="Player shape">
+          <label class="cc-opt" data-tip="Scope"><input type="radio" name="shape" value="2.39 / 1" aria-label="2.39 to 1" checked /><span><i class="ratio" style="--rw: 18px; --rh: 8px" aria-hidden="true"></i>2.39</span></label>
+          <label class="cc-opt" data-tip="Widescreen"><input type="radio" name="shape" value="16 / 9" aria-label="16 by 9" /><span><i class="ratio" style="--rw: 15px; --rh: 9px" aria-hidden="true"></i>16:9</span></label>
+          <label class="cc-opt" data-tip="Square"><input type="radio" name="shape" value="1 / 1" aria-label="Square" /><span><i class="ratio" style="--rw: 10px; --rh: 10px" aria-hidden="true"></i>1:1</span></label>
+          <label class="cc-opt" data-tip="Vertical"><input type="radio" name="shape" value="9 / 16" aria-label="Vertical, 9 by 16" /><span><i class="ratio" style="--rw: 7px; --rh: 12px" aria-hidden="true"></i>9:16</span></label>
+        </div>
 
-        <fieldset class="group">
-          <legend>Viewer</legend>
-          <label class="row toggle">
+        <div class="cc-pair">
+          <div class="cc-seg cc-width" role="group" aria-label="Player width">
+            <label class="cc-opt" data-tip="Phone"><input type="radio" name="size" value="phone" aria-label="Phone width" /><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7.5" y="3.5" width="9" height="17" rx="2.2" /></svg></span></label>
+            <label class="cc-opt" data-tip="Tablet"><input type="radio" name="size" value="tablet" aria-label="Tablet width" /><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2.2" /></svg></span></label>
+            <label class="cc-opt" data-tip="Full width"><input type="radio" name="size" value="full" aria-label="Full width" checked /><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="12" rx="2" /><path d="M9 20h6" /></svg></span></label>
+          </div>
+          <div class="cc-seg" role="group" aria-label="Page">
+            <label class="cc-opt" data-tip="Dark page"><input type="radio" name="page" value="dark" aria-label="Dark page" checked /><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 14.6A7.8 7.8 0 0 1 9.4 4.5a7.8 7.8 0 1 0 10.1 10.1z" /></svg></span></label>
+            <label class="cc-opt" data-tip="Light page"><input type="radio" name="page" value="light" aria-label="Light page" /><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.6" /><path d="M12 3.5v1.8M12 18.7v1.8M5.9 5.9l1.3 1.3M16.8 16.8l1.3 1.3M3.5 12h1.8M18.7 12h1.8M5.9 18.1l1.3-1.3M16.8 7.2l1.3-1.3" /></svg></span></label>
+          </div>
+        </div>
+
+        <div class="cc-pair">
+          <label class="cc-tile">
             <input type="checkbox" role="switch" name="motion" value="reduce" />
-            <span class="row-name">Less motion</span>
-            <span class="switch" aria-hidden="true"></span>
+            <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c2.2 0 2.8-3 5-3s2.8 6 5 6 2.8-3 5-3h3" /></svg>Less motion</span>
           </label>
-          <label class="row toggle">
+          <label class="cc-tile">
             <input type="checkbox" role="switch" name="contrast" value="more" />
-            <span class="row-name">More contrast</span>
-            <span class="switch" aria-hidden="true"></span>
+            <span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" /></svg>More contrast</span>
           </label>
-          <div class="row row-stack" role="group" aria-label="Player language">
-            <span class="row-name" aria-hidden="true">Language</span>
-            <span class="seg seg-4">
-              <label class="opt"><input type="radio" name="lang" value="en" checked /><span>English</span></label>
-              <label class="opt"><input type="radio" name="lang" value="fr" /><span lang="fr">Français</span></label>
-              <label class="opt"><input type="radio" name="lang" value="ja" /><span lang="ja">日本語</span></label>
-              <label class="opt"><input type="radio" name="lang" value="ar" /><span lang="ar">العربية</span></label>
-            </span>
-          </div>
-        </fieldset>
+        </div>
 
-        <fieldset class="group">
-          <legend>Style</legend>
-          <div class="row" role="group" aria-label="Page">
-            <span class="row-name" aria-hidden="true">Page</span>
-            <span class="seg">
-              <label class="opt opt-icon"><input type="radio" name="page" value="dark" aria-label="Dark page" checked /><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 14.6A7.8 7.8 0 0 1 9.4 4.5a7.8 7.8 0 1 0 10.1 10.1z" /></svg></span></label>
-              <label class="opt opt-icon"><input type="radio" name="page" value="light" aria-label="Light page" /><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.8" /><path d="M12 3v2M12 19v2M5.6 5.6L7 7M17 17l1.4 1.4M3 12h2M19 12h2M5.6 18.4L7 17M17 7l1.4-1.4" /></svg></span></label>
-            </span>
+        <div class="cc-pair">
+          <div class="cc-seg" role="group" aria-label="Accent colour">
+            <label class="cc-opt" data-tip="Follows the film"><input type="radio" name="accent" value="film" aria-label="Accent follows the film" checked /><span><i class="swatch-film" aria-hidden="true"></i></span></label>
+            <label class="cc-opt" data-tip="Your brand"><input type="radio" name="accent" value="brand" aria-label="Accent in your brand colour" /><span><i class="swatch-brand" aria-hidden="true"></i></span></label>
           </div>
-          <div class="row" role="group" aria-label="Accent colour">
-            <span class="row-name" aria-hidden="true">Accent</span>
-            <span class="seg">
-              <label class="opt"><input type="radio" name="accent" value="film" aria-label="Accent follows the film" checked /><span><i class="swatch-film" aria-hidden="true"></i>Film</span></label>
-              <label class="opt"><input type="radio" name="accent" value="brand" aria-label="Accent in your brand colour" /><span><i class="swatch-brand" aria-hidden="true"></i>Brand</span></label>
-            </span>
+          <div class="cc-seg cc-lang" role="group" aria-label="Player language">
+            <label class="cc-opt" data-tip="English"><input type="radio" name="lang" value="en" aria-label="English" checked /><span>EN</span></label>
+            <label class="cc-opt" data-tip="Français"><input type="radio" name="lang" value="fr" aria-label="Français" lang="fr" /><span>FR</span></label>
+            <label class="cc-opt" data-tip="日本語"><input type="radio" name="lang" value="ja" aria-label="日本語" lang="ja" /><span>JA</span></label>
+            <label class="cc-opt" data-tip="العربية"><input type="radio" name="lang" value="ar" aria-label="العربية" lang="ar" /><span>AR</span></label>
           </div>
-        </fieldset>
+        </div>
       </form>
-      <p class="console-keys">Keys: <kbd>Space</kbd> play, <kbd>←</kbd><kbd>→</kbd> seek, <kbd>[</kbd><kbd>]</kbd> scenes, <kbd>M</kbd> mute, <kbd>F</kbd> fullscreen, <kbd>C</kbd> captions.</p>
     </div>
 
     <script type="module" src="/src/site/main.ts"></script>

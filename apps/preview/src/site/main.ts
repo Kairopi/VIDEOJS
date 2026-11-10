@@ -8,6 +8,10 @@ import { TintModel } from '@/video/tint/model';
 import { registerI18n } from '@videojs/html/i18n';
 import type { MediaTextCue } from '@videojs/html';
 
+import Lenis from 'lenis';
+import Snap from 'lenis/snap';
+import 'lenis/dist/lenis.css';
+
 import { FILMS, type Film } from './films';
 import './site.css';
 
@@ -467,9 +471,47 @@ function runPending(): void {
   run?.();
 }
 
+// ---------------------------------------------------------------- Smooth scroll (Lenis, MIT)
+
+// Inertial scrolling, so the three acts glide rather than step, with gentle stops at each act. Off with reduced motion,
+// where the page scrolls natively and the CSS stops apply instead.
+let lenis: Lenis | null = null;
+let snap: Snap | null = null;
+function lenisFrame(time: number): void {
+  if (!lenis) return;
+  lenis.raf(time);
+  requestAnimationFrame(lenisFrame);
+}
+function placeSnaps(): void {
+  if (!lenis) return;
+  snap?.destroy();
+  snap = new Snap(lenis, { type: 'proximity', distanceThreshold: '28%', duration: 0.9, debounce: 260 });
+  const top = stage.getBoundingClientRect().top + window.scrollY;
+  for (const at of [0, SPECTRUM_AT, 1]) snap.add(Math.round(top + travel() * at));
+}
+function setSmooth(): void {
+  const want = !calm();
+  if (want && !lenis) {
+    lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 0.9, anchors: false });
+    placeSnaps();
+    requestAnimationFrame(lenisFrame);
+  } else if (!want && lenis) {
+    snap?.destroy();
+    snap = null;
+    lenis.destroy();
+    lenis = null;
+  }
+}
+
 /** Scroll to where the frames land in the player. */
 function goToPlayer(instant = false): void {
-  window.scrollTo({ top: stageEnd(), behavior: instant || calm() ? 'auto' : 'smooth' });
+  if (lenis && !instant) {
+    lenis.scrollTo(stageEnd(), { duration: 1.8, easing: (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2) });
+  } else if (lenis) {
+    lenis.scrollTo(stageEnd(), { immediate: true, force: true });
+  } else {
+    window.scrollTo({ top: stageEnd(), behavior: 'auto' });
+  }
   requestDraw();
 }
 
@@ -679,8 +721,8 @@ panel.addEventListener('toggle', (event) => {
     const b = opener.getBoundingClientRect();
     const m = panel.getBoundingClientRect();
     const barH = bar.getBoundingClientRect().height;
-    panel.style.top = `${Math.max(barH + 8, b.top - 12 - m.height)}px`;
-    panel.style.maxHeight = `${b.top - 12 - Math.max(barH + 8, b.top - 12 - m.height)}px`;
+    // Grow up out of the button, right edges aligned.
+    panel.style.top = `${Math.max(barH + 8, b.top - 10 - m.height)}px`;
     panel.style.left = `${clamp(b.right - m.width, 12, window.innerWidth - m.width - 12)}px`;
   }
   panel.querySelector<HTMLInputElement>('input:checked')?.focus({ preventScroll: true });
@@ -711,6 +753,7 @@ form.addEventListener('change', (event) => {
     case 'motion':
       if (on) root.dataset.tintMotion = 'reduce';
       else delete root.dataset.tintMotion;
+      setSmooth();
       requestDraw();
       break;
     case 'contrast':
@@ -778,8 +821,12 @@ FILMS.forEach((film, i) => {
 });
 render();
 
+setSmooth();
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', setSmooth);
+
 let lastWidth = 0;
 new ResizeObserver(() => {
+  placeSnaps();
   if (view.clientWidth === lastWidth) return;
   lastWidth = view.clientWidth;
   paintPicks();

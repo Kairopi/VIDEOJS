@@ -79,6 +79,15 @@ svg { flex: none; }
 
 main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline: var(--pad); }
 
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* ---------------------------------------------------------------- The bar: thin, quiet, over everything */
 
 .bar {
@@ -116,6 +125,8 @@ main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline:
 .stage::after { content: ''; display: block; height: 240svh; }
 /* Gentle stops where each act is held: the films, the spectrum, the landed player. */
 html { scroll-snap-type: y proximity; }
+/* Lenis does the stops itself while it runs. */
+html.lenis { scroll-snap-type: none; }
 .snap { position: absolute; left: 0; width: 1px; height: 1px; scroll-snap-align: start; scroll-margin-top: calc(-1 * var(--bar-h)); }
 .snap-films { top: 0; }
 .snap-spectrum { top: calc(240svh * 0.48); }
@@ -202,9 +213,9 @@ html { scroll-snap-type: y proximity; }
 .test-open {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   height: 64px;
-  padding: 0 22px;
+  padding: 0 18px;
   border: 0;
   border-radius: 14px;
   background: var(--panel);
@@ -218,6 +229,9 @@ html { scroll-snap-type: y proximity; }
 }
 .test-open svg, .tp-close svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
 @media (hover: hover) { .test-open:hover { background: var(--seg); } }
+.test-open { transition: background-color 160ms ease, scale 90ms ease; }
+.test-open:active { scale: 0.97; }
+.test-open[aria-expanded='true'] { background: var(--ink); color: var(--bg); box-shadow: none; }
 
 /* The view: one screen over the pinned player, drawn from real frames. */
 .stage-view { position: absolute; inset: 0 0 auto; z-index: 2; height: 100svh; pointer-events: none; color: #fff; }
@@ -308,122 +322,113 @@ html { scroll-snap-type: y proximity; }
 }
 .sv-caption p { max-width: 40ch; margin: 16px 0 0; font-size: clamp(17px, 1.6vw, 22px); font-weight: 500; opacity: 0.85; text-wrap: balance; }
 
-/* ---------------------------------------------------------------- Test the player: one panel */
+/* ---------------------------------------------------------------- Test the player: a small panel of tiles */
 
 .test-panel {
   position: fixed;
   inset: auto;
-  width: min(392px, calc(100vw - 24px));
-  max-height: calc(100svh - var(--bar-h) - 110px);
+  width: 300px;
   margin: 0;
-  padding: 6px 10px 12px;
-  overflow: auto;
+  padding: 8px;
+  overflow: visible;
   border: 0;
-  border-radius: 22px;
-  background: var(--panel);
-  box-shadow: 0 0 0 1px var(--hair), 0 30px 80px -16px rgb(0 0 0 / 0.55);
+  border-radius: 20px;
+  background: color-mix(in oklab, var(--panel) 88%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: 0 0 0 1px var(--hair), 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 24px 60px -14px rgb(0 0 0 / 0.6);
   color: var(--ink);
   opacity: 1;
-  translate: 0 0;
-  transition: opacity 180ms ease, translate 260ms var(--ease), display 180ms allow-discrete, overlay 180ms allow-discrete;
+  scale: 1;
+  transform-origin: 100% 100%;
+  transition: opacity 160ms ease, scale 220ms var(--ease), display 160ms allow-discrete, overlay 160ms allow-discrete;
 }
-@starting-style { .test-panel:popover-open { opacity: 0; translate: 0 10px; } }
-.test-panel:not(:popover-open) { opacity: 0; translate: 0 10px; }
-.tp-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px 2px 8px; }
-.tp-head h2 { margin: 0; font-size: 16px; font-weight: 680; }
-.tp-close { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-2); cursor: pointer; }
-.tp-close:hover { background: var(--seg); color: var(--ink); }
+@starting-style { .test-panel:popover-open { opacity: 0; scale: 0.96; } }
+.test-panel:not(:popover-open) { opacity: 0; scale: 0.96; }
 
-.console { display: grid; gap: 2px; }
-.group { min-width: 0; margin: 0; padding: 0; border: 0; }
-.group legend { padding: 14px 10px 6px; color: var(--ink-2); font-size: 12px; font-weight: 600; letter-spacing: 0.03em; }
-.row {
-  position: relative;
+.console { display: grid; gap: 6px; }
+.cc-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+/* Segmented controls: a recessed track with a raised chip for the choice. */
+.cc-seg { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--seg); }
+.cc-opt { position: relative; flex: 1; display: flex; cursor: pointer; }
+.cc-opt input, .cc-tile input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.cc-opt > span {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 54px;
-  padding: 8px 8px 8px 14px;
-  background: var(--card);
-}
-.group > .row:nth-child(2) { border-radius: 14px 14px 0 0; }
-.group > .row:last-child { border-radius: 0 0 14px 14px; }
-.group > .row:nth-child(2):last-child { border-radius: 14px; }
-.group > .row + .row { box-shadow: inset 0 1px 0 var(--hair); }
-.row-name { font-size: 15px; font-weight: 560; }
-.row-stack { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 8px 10px 14px; }
-
-.seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--seg); }
-.seg-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.opt { position: relative; display: inline-flex; cursor: pointer; }
-.opt input, .toggle input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.opt > span {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
   width: 100%;
   height: 34px;
-  padding: 0 12px;
-  border-radius: 999px;
+  border-radius: 9px;
   color: var(--ink-2);
-  font-size: 13.5px;
-  font-weight: 580;
+  font-size: 12.5px;
+  font-weight: 620;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
   white-space: nowrap;
-  transition: background-color 160ms ease, color 160ms ease;
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease, scale 90ms ease;
 }
-.opt-icon > span { width: 42px; padding: 0; }
-@media (hover: hover) { .opt:hover > span { color: var(--ink); } }
-.opt input:checked + span { background: var(--ink); color: var(--bg); }
-.opt input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
-.opt svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.ratio { flex: none; width: var(--rw); height: var(--rh); border: 1.6px solid currentColor; border-radius: 3px; }
-.swatch-film, .swatch-brand { flex: none; width: 16px; height: 16px; border-radius: 50%; }
+@media (hover: hover) { .cc-opt:hover > span { color: var(--ink); } }
+.cc-opt input:checked + span {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--hair), 0 1px 2px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.07);
+}
+:root[data-theme='light'] .cc-opt input:checked + span { background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.12); }
+.cc-opt:active > span { scale: 0.96; }
+.cc-opt input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 1px; }
+.cc-opt svg, .cc-tile svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Toggle tiles, like a control centre: off is quiet, on is filled. */
+.cc-tile { position: relative; display: flex; cursor: pointer; }
+.cc-tile > span {
+  display: grid;
+  align-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 70px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: var(--seg);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 620;
+  line-height: 1.2;
+  transition: background-color 160ms ease, color 160ms ease, scale 90ms ease;
+}
+.cc-tile svg { width: 20px; height: 20px; }
+@media (hover: hover) { .cc-tile:hover > span { color: var(--ink); } }
+.cc-tile input:checked + span { background: var(--ink); color: var(--bg); }
+.cc-tile:active > span { scale: 0.97; }
+.cc-tile input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.ratio { flex: none; width: var(--rw); height: var(--rh); border: 1.5px solid currentColor; border-radius: 2.5px; }
+.swatch-film, .swatch-brand { flex: none; width: 16px; height: 16px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25); }
 .swatch-film { background: var(--film-swatch, conic-gradient(#d98a3a, #2f6fd1, #e58fb0, #d98a3a)); }
 .swatch-brand { background: #f5c518; }
 
-.toggle { cursor: pointer; }
-.toggle:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: -2px; }
-.switch { position: relative; flex: none; width: 48px; height: 28px; border-radius: 999px; background: var(--seg); transition: background-color 180ms ease; }
-.switch::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
-  transition: translate 200ms var(--ease);
-}
-.toggle input:checked ~ .switch { background: var(--ink); }
-.toggle input:checked ~ .switch::after { translate: 20px 0; background: var(--bg); }
-
+/* The name of an icon-only choice, just above it. */
 [data-tip]::after {
   content: attr(data-tip);
   position: absolute;
-  top: calc(100% + 8px);
+  bottom: calc(100% + 8px);
   left: 50%;
   z-index: 2;
-  padding: 5px 9px;
-  border-radius: 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
   background: var(--ink);
   color: var(--bg);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 620;
   white-space: nowrap;
   opacity: 0;
-  translate: -50% -4px;
+  translate: -50% 3px;
   pointer-events: none;
-  transition: opacity 140ms ease, translate 140ms ease;
+  transition: opacity 120ms ease, translate 120ms ease;
 }
-@media (hover: hover) { [data-tip]:hover::after { opacity: 1; translate: -50% 0; transition-delay: 350ms; } }
+@media (hover: hover) { [data-tip]:hover::after { opacity: 1; translate: -50% 0; transition-delay: 400ms; } }
 [data-tip]:has(input:focus-visible)::after { opacity: 1; translate: -50% 0; }
-
-.console-keys { margin: 12px 10px 0; color: var(--ink-2); font-size: 12.5px; line-height: 1.9; }
 
 /* ---------------------------------------------------------------- Sections */
 
@@ -522,23 +527,21 @@ html { scroll-snap-type: y proximity; }
   .shelf { flex-wrap: nowrap; }
   .films-pick { flex: none; }
   .credit { order: 0; flex-basis: auto; }
-  .row-width, .console-keys { display: none; }
-  .group > .row-width + .row { border-radius: 14px; box-shadow: none; }
   .sv-caption h2 { font-size: 46px; }
 
-  /* A bottom sheet. */
+  /* A floating card at the bottom, within thumb reach. A phone can't show a wider player, so width is left out. */
   .test-panel {
-    inset: auto 0 0 0;
-    width: 100%;
-    max-height: 86svh;
-    border-radius: 24px 24px 0 0;
-    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    inset: auto 12px max(12px, env(safe-area-inset-bottom)) 12px;
+    width: auto;
+    transform-origin: 50% 100%;
   }
-  @starting-style { .test-panel:popover-open { translate: 0 100%; } }
-  .test-panel:not(:popover-open) { translate: 0 100%; }
+  .cc-width { display: none; }
+  .cc-pair:has(.cc-width) { grid-template-columns: 1fr; }
+  .cc-opt > span { height: 40px; font-size: 13.5px; }
+  .cc-tile > span { min-height: 76px; font-size: 13.5px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .player-frame, .shelf, .test-panel, .switch::after { transition: none; }
+  .player-frame, .shelf, .test-panel { transition: none; }
 }
-:root[data-tint-motion='reduce'] :is(.player-frame, .shelf, .test-panel, .switch::after) { transition: none; }
+:root[data-tint-motion='reduce'] :is(.player-frame, .shelf, .test-panel) { transition: none; }
