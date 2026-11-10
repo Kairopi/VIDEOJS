@@ -348,6 +348,8 @@
     .tint-dialog-backdrop:is([data-starting-style], [data-ending-style]),
     .tint-dialog:is([data-starting-style], [data-ending-style]) { opacity: 0; }
     .tint-dialog[data-starting-style] { translate: 0 6px; }
+    @media (prefers-reduced-motion: reduce) { .tint-dialog-backdrop, .tint-dialog { transition: none; } }
+    :where([data-tint-motion='reduce']) :is(.tint-dialog-backdrop, .tint-dialog) { transition: none; }
     .tint-dialog-title {
       font-size: clamp(18px, 3cqi, 28px);
       font-stretch: 112%;
@@ -441,6 +443,8 @@
       outline: none;
     }
     .tint-timeline[data-disabled] { cursor: default; opacity: 0.5; }
+    /* A thumb-sized hit area on touch screens; the track itself stays slim. */
+    @media (pointer: coarse) { .tint-timeline { height: calc(var(--media-spacing) * 11); } }
 
     .tint-track {
       position: absolute;
@@ -1011,9 +1015,10 @@
       .tint-row { gap: 0; }
     }
 
+    /* Time is essential, so it stays at every size; the scenes button gives way (scenes are still on [ and ]). */
     @container media-root (width < 20rem) {
       .tint-scenes-button { display: none; }
-      .tint-time { display: none; }
+      .tint-time { font-size: 0.8125rem; }
     }
 
     /* ---------- Forced colours ---------- */

@@ -566,6 +566,8 @@ function paintPicks(): void {
 
 function syncChoice(): void {
   for (const p of pickEls) p.button.setAttribute('aria-pressed', String(p.film === current));
+  $('.credit-title').textContent = current.title;
+  $('.credit-year').textContent = String(current.year);
   const model = filmModels[currentIndex()];
   if (model?.status === 'ready') {
     const stops = model.scenes.map((s) => accent(model, s.face));

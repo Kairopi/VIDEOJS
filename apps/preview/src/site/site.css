@@ -14,7 +14,7 @@
   --max: 1360px;
   --bar-h: 60px;
   /* Room the landed player leaves for the bar above it and the films below it. */
-  --chrome: 190px;
+  --chrome: 216px;
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
   --font: 'Mona Sans', ui-sans-serif, system-ui, sans-serif;
 }
@@ -164,6 +164,12 @@ html { scroll-snap-type: y proximity; }
 }
 .stage-pin[data-covered] :is(.player-frame, .shelf) { opacity: 0; }
 .films-pick { flex: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+/* What is playing, and the credit its licence asks for. */
+.credit { order: 3; flex-basis: 100%; margin: 0; color: var(--ink-2); font-size: 13px; }
+.credit-title { color: var(--ink); font-weight: 600; }
+.credit a { text-decoration-color: var(--hair); }
+.shelf { flex-wrap: wrap; row-gap: 10px; }
+.films-pick { min-width: 0; }
 .pick {
   position: relative;
   height: 64px;
@@ -513,6 +519,9 @@ html { scroll-snap-type: y proximity; }
   .films-pick { grid-template-columns: 1fr 1fr; }
   .pick { height: 56px; }
   .test-open { justify-content: center; height: 52px; }
+  .shelf { flex-wrap: nowrap; }
+  .films-pick { flex: none; }
+  .credit { order: 0; flex-basis: auto; }
   .row-width, .console-keys { display: none; }
   .group > .row-width + .row { border-radius: 14px; box-shadow: none; }
   .sv-caption h2 { font-size: 46px; }
