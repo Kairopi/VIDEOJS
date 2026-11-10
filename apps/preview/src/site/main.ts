@@ -13,6 +13,7 @@ import Snap from 'lenis/snap';
 import 'lenis/dist/lenis.css';
 
 import { FILMS, type Film } from './films';
+import { Glass } from './glass';
 import './site.css';
 
 const PLACEHOLDER = '<!-- Add a compatible media component here. -->';
@@ -187,6 +188,9 @@ const lensFrame = $('.sv-lens-frame');
 const lensCard = $('.sv-lens-card');
 const lensName = $('.sv-lens-name');
 const lensTime = $('.sv-lens-time');
+const glassCanvas = $<HTMLCanvasElement>('.sv-glass-canvas');
+const glass = Glass.create(glassCanvas);
+if (glass) lens.dataset.glass = '';
 const bar = $('.bar');
 
 // The film names over the four panels in the first act.
@@ -340,6 +344,7 @@ function render(): void {
   // The lens only while an act is held still.
   const still = (s1 === 0 || (s1 === 1 && s2 === 0)) && !gone;
   if (!still) lens.removeAttribute('data-on');
+  else drawGlass();
 
   if (p >= 0.999) landed();
   else if (p < 0.6) leftPlayer();
@@ -387,13 +392,59 @@ function moveLens(): void {
     const key = `${h.film}:${h.frame}`;
     if (key !== lensKey) {
       lensKey = key;
-      showFrame(model, lensFrame, h.frame);
+      if (glass) setGlassFrame(h.film, model, h.frame, key);
+      else showFrame(model, lensFrame, h.frame);
       lens.style.setProperty('--lens-color', accent(model, h.frame));
       lensName.textContent = FILMS[h.film]!.title;
       lensTime.textContent = formatTime(model.frames[h.frame]!.start);
     }
   }
+  drawGlass((lensX - lensTarget) * 0.004);
   if (Math.abs(lensTarget - lensX) > 0.5) lensRaf = requestAnimationFrame(moveLens);
+}
+
+/** Draw the glass where its card sits, over the columns as they are now. */
+function drawGlass(slide = 0): void {
+  if (!glass || !lens.hasAttribute('data-on')) return;
+  const v = view.getBoundingClientRect();
+  const g = glassCanvas.getBoundingClientRect();
+  if (!g.width) return;
+  try {
+    glass.draw(canvas, g.left - v.left + g.width / 2, g.top - v.top + g.height / 2, g.width, dpr(), slide);
+  } catch {
+    // A canvas the browser will not hand to WebGL: fall back to the flat card.
+    delete lens.dataset.glass;
+  }
+}
+
+// The storyboard tile shows at once; when the glass rests on a moment, a sharp frame from Mux replaces it.
+const sharpFrames = new Map<string, HTMLImageElement>();
+let sharpTimer = 0;
+function setGlassFrame(film: number, model: TintModel, index: number, key: string): void {
+  const f = model.frames[index];
+  const img = f && model.image(f.url);
+  if (!f || !img || !glass) return;
+  glass.setFrame(img, f.x, f.y, f.w, f.h);
+  lensFrame.style.removeProperty('background-image');
+  window.clearTimeout(sharpTimer);
+  sharpTimer = window.setTimeout(() => {
+    const url = `https://image.mux.com/${FILMS[film]!.id}/thumbnail.webp?time=${f.start.toFixed(2)}&width=640`;
+    let sharp = sharpFrames.get(url);
+    const apply = () => {
+      if (lensKey !== key || !sharp?.naturalWidth) return;
+      glass.setFrame(sharp, 0, 0, sharp.naturalWidth, sharp.naturalHeight);
+      drawGlass();
+    };
+    if (sharp?.complete) return apply();
+    if (!sharp) {
+      sharp = new Image();
+      sharp.crossOrigin = 'anonymous';
+      sharp.decoding = 'async';
+      sharp.src = url;
+      sharpFrames.set(url, sharp);
+    }
+    sharp.addEventListener('load', apply, { once: true });
+  }, 220);
 }
 
 function pointAt(x: number): void {
@@ -615,6 +666,9 @@ function syncChoice(): void {
     const stops = model.scenes.map((s) => accent(model, s.face));
     if (stops.length > 1) document.documentElement.style.setProperty('--film-swatch', `conic-gradient(${[...stops, stops[0]].join(', ')})`);
     bar.style.setProperty('--bar-chip', accent(model, model.signature()));
+    paintLights();
+    glowKey = '';
+    paintGlow();
   }
 }
 
@@ -737,10 +791,6 @@ form.addEventListener('change', (event) => {
   const value = input.value;
   const root = document.documentElement;
   switch (input.name) {
-    case 'page':
-      root.dataset.theme = value;
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', value === 'light' ? '#ffffff' : '#000000');
-      break;
     case 'size':
       frame.dataset.size = value;
       break;
@@ -770,6 +820,128 @@ form.addEventListener('change', (event) => {
   }
 });
 form.addEventListener('submit', (e) => e.preventDefault());
+
+// ---------------------------------------------------------------- House lights
+
+const lights = $<HTMLButtonElement>('.lights');
+const lightsPrint = $<HTMLCanvasElement>('.lights-print');
+const lightsGlassCanvas = $<HTMLCanvasElement>('.lights-glass');
+const lightsKnob = $('.lights-knob');
+const lightsGlass = Glass.create(lightsGlassCanvas);
+if (lightsGlass) lights.dataset.glass = '';
+/** 0 is lights down (dark page), 1 is lights up. Eased between while the marble rolls. */
+let lightsAt = 0;
+let lightsRaf = 0;
+
+/** The fingerprint in the track, dim with the lights down and lit with them up, and the marble over it. */
+function paintLights(): void {
+  const model = filmModels[currentIndex()];
+  if (!model || model.status !== 'ready') return;
+  const s = sizeOf(lightsPrint);
+  if (lightsPrint.width !== s.w || lightsPrint.height !== s.h) {
+    lightsPrint.width = s.w;
+    lightsPrint.height = s.h;
+  }
+  const source = model.print(s.w, s.h, LIT);
+  if (!source) return;
+  const g = lightsPrint.getContext('2d')!;
+  const t = lightsAt;
+  g.filter = `brightness(${lerp(0.5, 1.05, t)}) saturate(${lerp(0.75, 1.15, t)})`;
+  g.clearRect(0, 0, s.w, s.h);
+  g.drawImage(source, 0, 0);
+  g.filter = 'none';
+  lightsKnob.style.setProperty('--lights-on', String(t));
+  if (!lightsGlass) return;
+  // The marble sits over the track; find its centre in the track's own pixels.
+  const tr = lightsPrint.getBoundingClientRect();
+  const kr = lightsKnob.getBoundingClientRect();
+  const k = s.w / Math.max(1, tr.width);
+  const cx = kr.left - tr.left + kr.width / 2;
+  const cy = kr.top - tr.top + kr.height / 2;
+  const half = kr.width * 0.5;
+  try {
+    lightsGlass.setFrame(lightsPrint, (cx - half) * k, 0, kr.width * k, s.h);
+    lightsGlass.draw(lightsPrint, cx, cy, kr.width, k);
+  } catch {
+    delete lights.dataset.glass;
+  }
+}
+
+function setPage(theme: 'dark' | 'light'): void {
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#ffffff' : '#000000');
+  lights.setAttribute('aria-checked', String(theme === 'light'));
+}
+
+function rollLights(to: number): void {
+  cancelAnimationFrame(lightsRaf);
+  const from = lightsAt;
+  const start = performance.now();
+  const DURATION = 560;
+  const step = (now: number) => {
+    const t = calm() ? 1 : clamp((now - start) / DURATION, 0, 1);
+    lightsAt = lerp(from, to, easeInOut(t));
+    paintLights();
+    if (t < 1) lightsRaf = requestAnimationFrame(step);
+  };
+  lightsRaf = requestAnimationFrame(step);
+}
+
+lights.addEventListener('click', () => {
+  const up = lights.getAttribute('aria-checked') !== 'true';
+  rollLights(up ? 1 : 0);
+  const theme = up ? 'light' : 'dark';
+  type Doc = Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void> } };
+  const doc = document as Doc;
+  if (calm() || !doc.startViewTransition) return setPage(theme);
+  // The new page spreads out from the marble, as if the light came from the switch.
+  const r = lightsKnob.getBoundingClientRect();
+  // From where the marble comes to rest.
+  const travelX = lights.offsetWidth - r.width - 2 * (r.top - lights.getBoundingClientRect().top);
+  const x = r.left + r.width / 2 + (up ? 1 - lightsAt : -lightsAt) * travelX;
+  const y = r.top + r.height / 2;
+  const reach = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const vt = doc.startViewTransition(() => setPage(theme));
+  void vt.ready.then(() => {
+    document.documentElement.animate(
+      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${reach}px at ${x}px ${y}px)`] },
+      { duration: 900, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', pseudoElement: '::view-transition-new(root)' }
+    );
+  });
+});
+
+// ---------------------------------------------------------------- The screen lights the room
+
+const glowCanvases = [...document.querySelectorAll<HTMLCanvasElement>('.player-glow canvas')];
+let glowKey = '';
+let glowFront = 0;
+
+function paintGlow(): void {
+  const model = filmModels[currentIndex()];
+  const m = media();
+  if (!model || model.status !== 'ready' || !m) return;
+  const started = m.currentTime > 0.2 || !m.paused;
+  const index = started ? model.frameAt(m.currentTime) : -1;
+  const key = `${current.id}:${index}`;
+  if (key === glowKey) return;
+  glowKey = key;
+  glowFront = 1 - glowFront;
+  const c = glowCanvases[glowFront]!;
+  c.width = 48;
+  c.height = 27;
+  const g = c.getContext('2d')!;
+  const f = index >= 0 ? model.frames[index] : undefined;
+  const img = f && model.image(f.url);
+  if (f && img) g.drawImage(img, f.x, f.y, f.w, f.h, 0, 0, c.width, c.height);
+  else {
+    // Before the film starts, the room takes the poster's colours: the fingerprint.
+    const print = model.print(c.width, c.height, LIT);
+    if (print) g.drawImage(print, 0, 0, c.width, c.height);
+  }
+  c.dataset.on = '';
+  glowCanvases[1 - glowFront]!.removeAttribute('data-on');
+}
+for (const type of ['timeupdate', 'seeked', 'loadedmetadata', 'emptied', 'play']) player.addEventListener(type, paintGlow, true);
 
 // ---------------------------------------------------------------- The bar marks the section you are reading
 
@@ -830,5 +1002,6 @@ new ResizeObserver(() => {
   if (view.clientWidth === lastWidth) return;
   lastWidth = view.clientWidth;
   paintPicks();
+  paintLights();
   void paintSteps(current);
 }).observe(view);

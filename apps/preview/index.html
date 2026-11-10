@@ -40,15 +40,24 @@
         <span class="snap snap-player" aria-hidden="true"></span>
         <div class="stage-pin">
           <div class="player-frame">
+            <!-- The screen lights the room: the storyboard frame now playing, blurred into the page behind the player. -->
+            <div class="player-glow" aria-hidden="true"><canvas></canvas><canvas></canvas></div>
             <div class="player" id="player"></div>
           </div>
           <div class="shelf">
             <div class="films-pick" role="group" aria-label="Choose a film"></div>
             <p class="credit"><span class="credit-title"></span> by <a href="https://studio.blender.org/films/">Blender Studio</a>, <span class="credit-year"></span>. <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Streamed by Mux.</p>
-            <button class="test-open" type="button" popovertarget="test-panel">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
-              Test the player
-            </button>
+            <div class="shelf-tools">
+              <!-- House lights: down for a dark page, up for a light one. A glass marble rolls over the film's fingerprint. -->
+              <button class="lights" type="button" role="switch" aria-checked="false" aria-label="House lights">
+                <span class="lights-track" aria-hidden="true"><canvas class="lights-print"></canvas></span>
+                <span class="lights-knob" aria-hidden="true"><canvas class="lights-glass"></canvas></span>
+              </button>
+              <button class="test-open" type="button" popovertarget="test-panel">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
+                Test the player
+              </button>
+            </div>
           </div>
 
           <div class="stage-view">
@@ -59,6 +68,7 @@
             <div class="sv-lens" aria-hidden="true">
               <span class="sv-lens-line"></span>
               <span class="sv-lens-card">
+                <span class="sv-glass"><canvas class="sv-glass-canvas"></canvas></span>
                 <span class="sv-lens-frame"></span>
                 <span class="sv-lens-meta"><span class="sv-lens-name"></span><span class="sv-lens-time"></span></span>
               </span>
@@ -162,10 +172,6 @@
             <label class="cc-opt" data-tip="Phone"><input type="radio" name="size" value="phone" aria-label="Phone width" /><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7.5" y="3.5" width="9" height="17" rx="2.2" /></svg></span></label>
             <label class="cc-opt" data-tip="Tablet"><input type="radio" name="size" value="tablet" aria-label="Tablet width" /><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2.2" /></svg></span></label>
             <label class="cc-opt" data-tip="Full width"><input type="radio" name="size" value="full" aria-label="Full width" checked /><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="12" rx="2" /><path d="M9 20h6" /></svg></span></label>
-          </div>
-          <div class="cc-seg" role="group" aria-label="Page">
-            <label class="cc-opt" data-tip="Dark page"><input type="radio" name="page" value="dark" aria-label="Dark page" checked /><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 14.6A7.8 7.8 0 0 1 9.4 4.5a7.8 7.8 0 1 0 10.1 10.1z" /></svg></span></label>
-            <label class="cc-opt" data-tip="Light page"><input type="radio" name="page" value="light" aria-label="Light page" /><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.6" /><path d="M12 3.5v1.8M12 18.7v1.8M5.9 5.9l1.3 1.3M16.8 16.8l1.3 1.3M3.5 12h1.8M18.7 12h1.8M5.9 18.1l1.3-1.3M16.8 7.2l1.3-1.3" /></svg></span></label>
           </div>
         </div>
 
