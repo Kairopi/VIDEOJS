@@ -3,10 +3,121 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tint - Video.js</title>
+    <title>Tint: a Video.js player that wears the film's colours</title>
+    <meta name="description" content="An open-source Video.js v10 skin. The film's colour fingerprint becomes the poster and the timeline, and the scene you're watching colours the controls." />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta property="og:title" content="Tint" />
+    <meta property="og:description" content="A Video.js player that wears the film's colours." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mona+Sans:wdth,wght@75..125,200..900&display=swap" />
+    <link rel="preconnect" href="https://image.mux.com" crossorigin />
+    <link rel="preconnect" href="https://stream.mux.com" crossorigin />
   </head>
-  <body class="text-foreground h-screen overflow-hidden font-sans">
-    <div id="root" class="h-full"></div>
-    <script type="module" src="/src/shell/main.tsx"></script>
+  <body>
+    <a class="skip" href="#player">Skip to the player</a>
+
+    <header class="top">
+      <a class="top-mark" href="#top" aria-label="Tint, top of page">Tint</a>
+      <nav class="top-nav" aria-label="Sections">
+        <a href="#how">How it works</a>
+        <a href="#install">Use it</a>
+        <a href="https://github.com/Kairopi/VIDEOJS">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-labelledby="mark">
+        <h1 class="mark" id="mark">
+          <span class="mark-layer" data-layer="0">Tint</span>
+          <span class="mark-layer" data-layer="1" aria-hidden="true">Tint</span>
+        </h1>
+        <p class="hero-line">A Video.js player that wears the film's colours.</p>
+      </section>
+
+      <section class="stage" aria-label="Player">
+        <div class="player" id="player" tabindex="-1"></div>
+        <div class="shelf-head">
+          <h2>Choose a film</h2>
+          <p class="shelf-note">Each card is the film's own fingerprint.</p>
+        </div>
+        <ul class="shelf" aria-label="Films"></ul>
+      </section>
+
+      <section class="how" id="how" aria-labelledby="how-title">
+        <div class="section-head">
+          <h2 id="how-title">One image becomes the whole interface.</h2>
+          <p>Tint reads the storyboard Mux already makes for timeline previews. Nothing samples the playing video, so it costs nothing per frame.</p>
+        </div>
+        <ol class="steps">
+          <li class="step">
+            <figure>
+              <div class="step-visual step-storyboard"><img alt="" crossorigin="anonymous" decoding="async" /></div>
+              <figcaption><strong>The storyboard.</strong> <span class="step-frames"></span> frames from across the film, in one image.</figcaption>
+            </figure>
+          </li>
+          <li class="step">
+            <figure>
+              <div class="step-visual"><canvas class="step-slits" aria-hidden="true"></canvas></div>
+              <figcaption><strong>Slit by slit.</strong> Each frame is cut into thin strips, and each strip is squeezed to a line of colour.</figcaption>
+            </figure>
+          </li>
+          <li class="step">
+            <figure>
+              <div class="step-visual"><canvas class="step-print" aria-hidden="true"></canvas></div>
+              <figcaption><strong>The fingerprint.</strong> Lined up in order, the lines show the film's colour story. Big jumps in colour mark the <span class="step-scenes"></span> scenes.</figcaption>
+            </figure>
+          </li>
+        </ol>
+        <div class="palette" aria-label="Scene colours">
+          <p class="palette-label">Scene colours, used for the accent as you watch</p>
+          <ol class="palette-list"></ol>
+        </div>
+      </section>
+
+      <section class="care" aria-labelledby="care-title">
+        <div class="section-head">
+          <h2 id="care-title">Made to work for everyone.</h2>
+        </div>
+        <dl class="care-list">
+          <div><dt>Keyboard</dt><dd>Every control is reachable. Press [ and ] to jump between scenes.</dd></div>
+          <div><dt>Focus you can see</dt><dd>One ring everywhere: the scene colour with a dark halo, clear over any frame.</dd></div>
+          <div><dt>Readable colour</dt><dd>Each scene colour is set to a lightness that reads on the dark controls.</dd></div>
+          <div><dt>Calm on request</dt><dd>With reduced motion, the fold and the colour easing switch off.</dd></div>
+          <div><dt>Thumb-sized</dt><dd>44 px controls, bigger in fullscreen. Hover effects only where there's hover.</dd></div>
+          <div><dt>Any size</dt><dd>Controls reflow at four widths, from a phone to a cinema screen.</dd></div>
+        </dl>
+      </section>
+
+      <section class="install" id="install" aria-labelledby="install-title">
+        <div class="section-head">
+          <h2 id="install-title">Use it on your site.</h2>
+          <p>Copy the skin's <code>src</code> folder into your project, then wrap any video that has a thumbnails track.</p>
+        </div>
+        <div class="code">
+          <button class="code-copy" type="button">Copy</button>
+          <pre><code>&lt;video-player content-title="Sprite Fright"&gt;
+  &lt;!-- the markup from src/video/skin.html --&gt;
+  &lt;mux-video
+    src="https://stream.mux.com/PLAYBACK_ID.m3u8"
+    playsinline crossorigin="anonymous"&gt;&lt;/mux-video&gt;
+&lt;/video-player&gt;
+
+&lt;script type="module"&gt;
+  import '@videojs/html/video/player';
+  import '@videojs/html/media/mux-video';
+  import './src/video/skin.ts';
+&lt;/script&gt;</code></pre>
+        </div>
+        <p class="install-links"><a href="https://github.com/Kairopi/VIDEOJS">Source on GitHub</a><a href="./workbench.html">Open the workbench</a></p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p>Films by <a href="https://studio.blender.org">Blender Studio</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Streamed by <a href="https://www.mux.com">Mux</a>. Built on <a href="https://videojs.org">Video.js v10</a>.</p>
+      <p>Tint is open source under the Apache License 2.0. Made for the Video.js Skins Challenge, 2026.</p>
+    </footer>
+
+    <script type="module" src="/src/site/main.ts"></script>
   </body>
 </html>
