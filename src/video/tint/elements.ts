@@ -20,6 +20,16 @@ const LIT = 'saturate(1.4) contrast(1.08) brightness(1.06)';
 const DIM = 'saturate(0.6) brightness(0.78)';
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
+/** The <video> that draws the picture: the media itself, or the one inside a media component such as <mux-video>. */
+function videoOf(container: HTMLElement): HTMLVideoElement | null {
+  for (const el of container.children) {
+    if (el instanceof HTMLVideoElement) return el;
+    const inner = el.shadowRoot?.querySelector('video');
+    if (inner) return inner;
+  }
+  return null;
+}
+
 type TintState = 'poster' | 'folding' | 'playing' | 'unfolding' | 'ended' | 'error';
 
 /** The system setting, or a page that asks for calm with `data-tint-motion="reduce"` on any ancestor. */
@@ -204,7 +214,9 @@ export class TintPrintElement extends UIElement {
     const container = this.#container!;
     const model = this.#model;
     const target = container.querySelector<HTMLElement>('[data-tint-fold-target]');
+    const skip = new AbortController();
     const finish = () => {
+      skip.abort();
       cancelAnimationFrame(this.#foldRaf);
       window.clearTimeout(this.#foldTimer);
       const playback = this.#playback.value;
@@ -225,6 +237,27 @@ export class TintPrintElement extends UIElement {
       return;
     }
     this.#setState(direction === 'in' ? 'folding' : 'unfolding');
+    // It never stands between the viewer and the film: any key, press or seek ends it on the spot.
+    // A press needs a moment's grace, or the very click on Play would cancel it.
+    const armed = performance.now() + 120;
+    const cut = (event: Event) => {
+      if (event instanceof KeyboardEvent && ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) return;
+      if (performance.now() >= armed) finish();
+    };
+    // Not wheel: on a page, the scroll that brings the player into view must not cancel what it starts.
+    container.addEventListener('pointerdown', cut, { capture: true, passive: true, signal: skip.signal });
+    // Keys count when they are meant for the player: focus inside it, or nowhere in particular (the Play button
+    // that had focus has just gone away with the poster).
+    const doc = container.ownerDocument;
+    doc.addEventListener(
+      'keydown',
+      (event) => {
+        const active = doc.activeElement;
+        if (!active || active === doc.body || container.contains(active)) cut(event);
+      },
+      { capture: true, passive: true, signal: skip.signal }
+    );
+    videoOf(container)?.addEventListener('seeking', cut, { signal: skip.signal });
 
     const W = P.width;
     const H = P.height;
@@ -256,12 +289,12 @@ export class TintPrintElement extends UIElement {
     const gy = area.y + (area.h - (rows * th + (rows - 1) * gap)) / 2;
     const radius = Math.min(6, tw * 0.08);
 
-    // The frame you start on, or end on, grows into the picture. A near-black frame (a studio logo, a fade) would
-    // only grow into a black box, so then every tile goes to the timeline.
+    // The frame you start on, or end on, is the film itself: its tile on the sheet shows the live video, already
+    // playing, and that tile grows into the picture. Live pixels stay sharp at full size and match the video exactly,
+    // so the hand-off has no cut. Without a drawable video it falls back to the storyboard frame and a dissolve.
     const time = this.#time.value?.currentTime ?? 0;
-    const heroAt = clamp(direction === 'in' ? model.frameAt(time) : N - 1, 0, N - 1);
-    // OKLab L runs 0 to 1: a night scene sits near 0.2, a black title card under 0.1.
-    const hero = frames[heroAt]!.lab[0] > 0.14 ? heroAt : -1;
+    const hero = clamp(direction === 'in' ? model.frameAt(time) : N - 1, 0, N - 1);
+    const video = videoOf(container);
 
     type Box = { x: number; y: number; w: number; h: number };
     const stripe = (i: number): Box => ({ x: (i * W) / N, y: 0, w: W / N + 0.5, h: H });
@@ -280,12 +313,13 @@ export class TintPrintElement extends UIElement {
     const full: Box = { x: (W - fitW) / 2, y: (H - fitH) / 2, w: fitW, h: fitH };
     const mix = (a: Box, b: Box, t: number): Box => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, w: a.w + (b.w - a.w) * t, h: a.h + (b.h - a.h) * t });
 
-    // Timing, in ms. Open: stripes become tiles in film order. Hold a beat. Settle: tiles drop to the timeline.
-    const OPEN = 380;
-    const OPEN_SPREAD = 260;
-    const HOLD = 160;
-    const SETTLE = 480;
-    const SETTLE_SPREAD = 420;
+    // Timing, in ms (about 1.4 s, with the film playing from the first frame, so nobody waits on it).
+    // Open: stripes become tiles in film order. Hold a beat. Settle: tiles drop to the timeline.
+    const OPEN = 340;
+    const OPEN_SPREAD = 220;
+    const HOLD = 120;
+    const SETTLE = 440;
+    const SETTLE_SPREAD = 320;
     const settleAt = OPEN + OPEN_SPREAD + HOLD;
     const TOTAL = settleAt + SETTLE + SETTLE_SPREAD;
     const outQuart = (t: number) => 1 - (1 - t) ** 4;
@@ -295,10 +329,12 @@ export class TintPrintElement extends UIElement {
       return x * x * (3 - 2 * x);
     };
 
-    const drawItem = (i: number, box: Box, picture: number, round: number, alpha = 1) => {
+    const drawItem = (i: number, box: Box, picture: number, round: number, alpha = 1, live = false) => {
       const f = frames[i]!;
       const img = model.image(f.url);
       if (alpha <= 0) return;
+      const source: [CanvasImageSource, number, number, number, number] | null =
+        live && video ? [video, 0, 0, video.videoWidth, video.videoHeight] : img ? [img, f.x, f.y, f.w, f.h] : null;
       g.save();
       g.globalAlpha = alpha;
       g.beginPath();
@@ -306,9 +342,14 @@ export class TintPrintElement extends UIElement {
       g.clip();
       // The stripe's colour underneath; the real frame fades up over it.
       if (print && picture < 1) g.drawImage(print, i * pw, 0, pw, print.height, box.x, box.y, box.w, box.h);
-      if (img && picture > 0) {
+      if (source && picture > 0) {
         g.globalAlpha = picture * alpha;
-        g.drawImage(img, f.x, f.y, f.w, f.h, box.x, box.y, box.w, box.h);
+        if (live) {
+          // A black opening (fade, studio logo) still reads as a window, not a hole.
+          g.fillStyle = '#000';
+          g.fillRect(box.x, box.y, box.w, box.h);
+        }
+        g.drawImage(source[0], source[1], source[2], source[3], source[4], box.x, box.y, box.w, box.h);
       }
       g.restore();
       // A hairline edge while it is a tile, so a black frame (a fade, a logo) still reads as a frame on the sheet.
@@ -324,6 +365,7 @@ export class TintPrintElement extends UIElement {
       }
     };
 
+    let heroLive = direction === 'out' && video !== null && video.readyState >= 2 && video.videoWidth > 0;
     const draw = (t: number) => {
       g.clearRect(0, 0, W, H);
       // The room goes dark for the sheet, and the film shows through as the tiles leave.
@@ -335,7 +377,9 @@ export class TintPrintElement extends UIElement {
       const order = hero;
       for (let pass = 0; pass < 2; pass++) {
         for (let i = 0; i < N; i++) {
-          if ((pass === 0) === (i === order)) continue; // the hero is drawn last, on top
+          // The hero is drawn first, underneath: the film opens out beneath the sheet, and is uncovered as the
+          // other frames pour into the timeline.
+          if ((pass === 0) !== (i === order)) continue;
           const pos = N > 1 ? i / (N - 1) : 0;
           const open = outQuart(clamp((t - pos * OPEN_SPREAD) / OPEN, 0, 1));
           const settle = inOutCubic(clamp((t - settleAt - pos * SETTLE_SPREAD) / SETTLE, 0, 1));
@@ -346,15 +390,18 @@ export class TintPrintElement extends UIElement {
           // A little lift as each tile leaves the sheet, so the drop reads as a fall rather than a slide.
           if (!isHero) box.y -= Math.sin(Math.PI * settle) * th * 0.35;
           // Each frame stays a picture for most of its fall, and becomes its stripe again as it lands.
-          // The hero stays a picture and dissolves into the playing video instead (a storyboard frame is a few
-          // seconds off the real one, so a cross-fade hides the cut).
+          // A live hero simply arrives where the video is. A storyboard hero is a few seconds off the real frame
+          // and soft when large, so it dissolves into the video instead.
+          // Go live once the video has a frame, but never part-way through a dissolve.
+          if (isHero && !heroLive && settle === 0 && video && video.readyState >= 2 && video.videoWidth > 0) heroLive = true;
+          const live = isHero && heroLive;
           const picture = isHero ? open : open * (1 - step(settle, 0.6, 1));
-          const alpha = isHero ? 1 - step(settle, 0.5, 0.95) : 1;
-          drawItem(i, box, picture, radius * (1 - settle) + (isHero ? 0 : 1), alpha);
-          if (isHero && open > 0.5 && settle < 0.15) {
-            // The frame you are about to watch is ringed in its own colour.
+          const alpha = isHero && !live ? 1 - step(settle, 0.5, 0.95) : 1;
+          drawItem(i, box, picture, radius * (1 - settle) + (isHero ? 0 : 1), alpha, live);
+          if (isHero && open > 0.5 && settle < 0.7) {
+            // The frame you are about to watch is ringed in its own colour, and the ring carries it as it grows.
             g.save();
-            g.globalAlpha = step(open, 0.5, 1) * (1 - step(settle, 0, 0.15));
+            g.globalAlpha = step(open, 0.5, 1) * (1 - step(settle, 0.25, 0.7));
             g.strokeStyle = accentCss(model, i);
             g.lineWidth = 2;
             g.beginPath();
