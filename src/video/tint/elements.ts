@@ -916,7 +916,13 @@ export class TintBloomElement extends UIElement {
     const W = t.width;
     const base = Math.max(1, t.height);
     // Frames rise well clear of the strip, however tall the strip is.
-    const H = Math.round(Math.max(base + 52, Math.min(base + 96, (player?.height ?? 300) * 0.26)));
+    // Frames float clear of the strip by GAP, with PAD above for the ring, so the frame you will land on is never cut.
+    const GAP = 7;
+    const PAD = 3;
+    // On a short player, leave room above the frame for the time and scene label (about 30 px) inside the player.
+    const above = player ? t.top - player.top - GAP - PAD - 30 : Infinity;
+    const H = Math.round(base + GAP + PAD + Math.max(36, Math.min(104, (player?.height ?? 300) * 0.27, above)));
+    const room = H - base - GAP - PAD;
     // Sit on the track and rise from it; lift the time label above the tallest frame.
     this.style.left = `${t.left - s.left}px`;
     this.style.width = `${W}px`;
@@ -938,7 +944,7 @@ export class TintBloomElement extends UIElement {
     if (r > 0) {
       g.beginPath();
       g.roundRect(0, H - base, W, base, r);
-      g.rect(r, 0, W - 2 * r, H - base + r);
+      g.rect(0, 0, W, H - base - 1);
       g.clip();
     }
 
@@ -962,7 +968,7 @@ export class TintBloomElement extends UIElement {
     const f0 = model.frames[focusIndex]!;
     const aspect = f0.w && f0.h ? f0.w / f0.h : 16 / 9;
     // The strip shares the bar with the controls, so on a short strip the lens may take a larger share of it.
-    const target = Math.min(H * aspect, Math.max(W * 0.24, Math.min(W * 0.5, 300)));
+    const target = Math.min(room * aspect, Math.max(W * 0.24, Math.min(W * 0.5, 300)));
     const reach = Math.min(0.5, (1.6 * target) / W);
     const d = Math.max(0, (target / unit - 1) * open);
     const lens = (q: number) => ((d + 1) * q) / (d * q + 1);
@@ -979,7 +985,8 @@ export class TintBloomElement extends UIElement {
     let wmax = 0;
     for (let i = 0; i < n; i++) wmax = Math.max(wmax, edges[i + 1]! - edges[i]!);
     // Show the frame you will land on whole: the bloom is as tall as that frame's picture, within limits.
-    const top = Math.max(base, Math.min(H, wmax / aspect));
+    const top = Math.max(8, Math.min(room, wmax / aspect));
+    const floor = H - base - GAP;
 
     const now = this.#time.value?.currentTime ?? 0;
     let focusBox: [number, number, number, number] | null = null;
@@ -990,17 +997,16 @@ export class TintBloomElement extends UIElement {
       const sprite = this.#sprite(f.url);
       if (sprite && w > 0.05) {
         const src = f.start < now ? sprite.lit : sprite.dim;
-        // Thin stripes stay track-high; frames rise toward full height as they widen.
+        // In the strip, every frame stays a stripe: the whole frame squeezed to its width, as in the fingerprint
+        // (and as dim ahead as the strip). The lens only widens it.
+        g.globalAlpha = f.start < now ? 1 : 0.62;
+        g.drawImage(src, f.x, f.y, f.w, f.h, x0, H - base, w + 0.4, base);
+        // Above the strip, the frames that widen rise out of it as pictures, tallest at the lens.
         const grow = wmax > unit * 1.6 ? Math.min(1, Math.max(0, (w - unit * 1.5) / (wmax - unit * 1.5))) : 0;
-        const h = base + (top - base) * grow * grow * (3 - 2 * grow);
-        const y = H - h;
+        const h = top * grow * grow * (3 - 2 * grow);
+        const y = floor - h;
         const gap = w > 14 ? 1 : 0;
-        if (grow < 1) {
-          // As a stripe: the whole frame squeezed to its width, as in the fingerprint (and as dim ahead as the strip).
-          g.globalAlpha = f.start < now ? 1 : 0.62;
-          g.drawImage(src, f.x, f.y, f.w, f.h, x0, y, w + 0.4, h);
-        }
-        if (grow > 0) {
+        if (grow > 0 && h > 1) {
           // As a frame: the middle of the picture, cropped to the space it has.
           const box = (w - gap) / h;
           const fa = f.w / f.h;
@@ -1020,11 +1026,14 @@ export class TintBloomElement extends UIElement {
     g.globalAlpha = 1;
     g.restore();
     // The time and scene ride just above the frame you will land on.
-    slider.style.setProperty('--tint-bloom-lift', `${top - (t.bottom - s.top) + 10}px`);
+    slider.style.setProperty('--tint-bloom-lift', `${base + GAP + top - (t.bottom - s.top) + 10}px`);
 
     // The frame you will land on, ringed in its own colour over a dark halo so it reads on any picture.
-    if (focusBox && open > 0.5) {
-      const [x, y, w, h] = focusBox;
+    if (focusBox && open > 0.5 && focusBox[3] > 8) {
+      // Kept inside the canvas, so the ring is whole at either end of the strip too.
+      const x = Math.max(3, focusBox[0]);
+      const w = Math.min(W - 3, focusBox[0] + focusBox[2]) - x;
+      const [, y, , h] = focusBox;
       g.lineWidth = 4;
       g.strokeStyle = 'rgb(0 0 0 / 0.55)';
       g.beginPath();

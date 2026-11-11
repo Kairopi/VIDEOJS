@@ -1300,7 +1300,7 @@
     :scope[data-tint-pause][data-tint-state='playing']:not([data-tint-pause-rest]) .tint-pause { opacity: 1; translate: 0 0; }
     :scope[data-tint-pause][data-tint-state='playing']:not([data-tint-pause-rest])::before { opacity: 1; }
     /* Out of the way while you look along the strip or use a menu. */
-    :scope:has(.tint-timeline:is([data-pointing], [data-dragging]), .tint-button[aria-expanded='true']) .tint-pause { opacity: 0 !important; }
+    :scope:has(.tint-timeline:is([data-pointing], [data-dragging]), .tint-bloom[data-open], .tint-button[aria-expanded='true']) .tint-pause { opacity: 0 !important; }
     /* Resting: the card and shade lift slowly, leaving the paused frame clean to look at. */
     :scope[data-tint-pause-rest] .tint-pause,
     :scope[data-tint-pause-rest]::before { transition-duration: 900ms; }
