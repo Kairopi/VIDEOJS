@@ -137,6 +137,33 @@ export class TintModel extends EventTarget {
     return best;
   }
 
+  /**
+   * The key art: the brightest, most colourful scene picture away from the logos at the start and the credits at the
+   * end. Streaming services lead with a real still from the film; this is ours, chosen from the storyboard.
+   */
+  keyArt(): number {
+    const { frames, duration } = this;
+    if (!frames.length) return -1;
+    const score = (i: number) => frames[i]!.chroma * frames[i]!.lab[0] ** 1.5;
+    const inBody = (i: number) => frames[i]!.start >= duration * 0.04 && frames[i]!.end <= duration * 0.9;
+    const faces = this.scenes.map((s) => s.face).filter(inBody);
+    const pool = faces.length ? faces : frames.map((_, i) => i).filter(inBody);
+    if (!pool.length) return this.signature();
+    return pool.reduce((best, i) => (score(i) > score(best) ? i : best), pool[0]!);
+  }
+
+  /**
+   * A sharp still for a moment, when the storyboard comes from Mux: its image API renders any time at any width.
+   * Signed playback (a token in the URL) is left alone, since the still would need a token of its own.
+   */
+  stillUrl(time: number, width: number): string | null {
+    const url = this.frames[0]?.url ?? '';
+    const match = /^https:\/\/image\.mux\.com\/([A-Za-z0-9]+)\/storyboard\.(?:webp|jpg|png)(?:\?([^#]*))?(?:#.*)?$/.exec(url);
+    if (!match || /(?:^|&)token=/.test(match[2] ?? '')) return null;
+    const w = Math.min(1920, Math.max(320, Math.ceil(width / 320) * 320));
+    return `https://image.mux.com/${match[1]}/thumbnail.webp?time=${Math.max(0, time).toFixed(2)}&width=${w}`;
+  }
+
   image(url: string): HTMLImageElement | undefined {
     return this.#images.get(url);
   }

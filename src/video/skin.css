@@ -44,7 +44,7 @@
 
     --tint-control: calc(var(--media-spacing) * 11);
     --tint-icon: calc(var(--media-spacing) * 6);
-    --tint-track-rest: calc(var(--media-spacing) * 2);
+    --tint-track-rest: calc(var(--media-spacing) * 3);
     --tint-track-open: calc(var(--media-spacing) * 6.5);
 
     --media-video-border-radius: var(--tint-radius-player);
@@ -199,37 +199,108 @@
       pointer-events: none;
     }
 
-    .tint-print-canvas {
+    /* Key art: a real still from the film, like a streaming title page. The storyboard frame shows at once, softened
+       so its low resolution reads as depth of field, and a sharp still fades over it when the source can make one. */
+    .tint-art {
       position: absolute;
       inset: 0;
+      z-index: 0;
+      display: block;
       width: 100%;
       height: 100%;
+      object-fit: cover;
       opacity: 0;
-      transition: opacity var(--tint-duration-fast) ease, filter 900ms ease;
+      transition: opacity var(--tint-duration) ease;
     }
+    canvas.tint-art { filter: blur(calc(var(--media-spacing) * 0.6)) saturate(1.05); scale: 1.02; }
+    :scope[data-tint-ready]:is([data-tint-state='poster'], [data-tint-state='ended'], [data-tint-state='folding'], [data-tint-state='unfolding'], [data-tint-state='error']):not([data-tint-sheet]) .tint-art { opacity: 1; }
+    :scope .tint-art-hi:not([data-ready]) { opacity: 0 !important; transition: none; }
+    /* During the unpacking the canvas covers it, so it changes without a fade. */
+    :scope:is([data-tint-state='folding'], [data-tint-state='unfolding']) .tint-art { transition: none; }
+    :scope[data-tint-state='error'] .tint-art { filter: grayscale(1) brightness(0.7); }
 
-    /* A soft floor of shade under the title, tinted by the film. */
+    /* Shade for the title, from the bottom and the reading side, tinted by the film. */
     .tint-print::after {
       content: '';
       position: absolute;
       inset: 0;
+      z-index: 1;
       opacity: 0;
-      background: linear-gradient(
-        to top,
-        oklch(0.1 0.02 var(--tint-h) / 0.9),
-        oklch(0.1 0.02 var(--tint-h) / 0.35) 45%,
-        transparent 75%
-      );
+      background:
+        linear-gradient(to top, oklch(0.1 0.02 var(--tint-h) / 0.92), oklch(0.1 0.02 var(--tint-h) / 0.5) 30%, transparent 62%),
+        linear-gradient(to right, oklch(0.1 0.02 var(--tint-h) / 0.7), oklch(0.1 0.02 var(--tint-h) / 0.25) 42%, transparent 68%);
       transition: opacity var(--tint-duration-fast) ease;
     }
-
+    :scope:dir(rtl) .tint-print::after {
+      background:
+        linear-gradient(to top, oklch(0.1 0.02 var(--tint-h) / 0.92), oklch(0.1 0.02 var(--tint-h) / 0.5) 30%, transparent 62%),
+        linear-gradient(to left, oklch(0.1 0.02 var(--tint-h) / 0.7), oklch(0.1 0.02 var(--tint-h) / 0.25) 42%, transparent 68%);
+    }
     :scope:is([data-tint-state='poster'], [data-tint-state='ended'], [data-tint-state='error']) .tint-print::after { opacity: 1; }
-    :scope[data-tint-ready]:is([data-tint-state='poster'], [data-tint-state='ended'], [data-tint-state='error']) .tint-print-canvas { opacity: 1; }
-    :scope[data-tint-state='unfolding'] .tint-print-canvas { transition-duration: 0ms; }
+
+    /* The fingerprint band: the whole film along the bottom of the poster. Point along it to riffle the key art
+       through the film; press to play from there. It is where the timeline will be, and the unpacking starts in it. */
+    .tint-band {
+      --tint-band: clamp(18px, 5.2cqi, 52px);
+      position: absolute;
+      inset-inline: 0;
+      bottom: 0;
+      z-index: 2;
+      height: var(--tint-band);
+      opacity: 0;
+      pointer-events: none;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.14);
+      transition: opacity var(--tint-duration-fast) ease;
+    }
+    :scope[data-tint-ready]:is([data-tint-state='poster'], [data-tint-state='ended'], [data-tint-state='error']) .tint-band { opacity: 1; pointer-events: auto; }
+    :scope[data-tint-state='unfolding'] .tint-band { transition-duration: 0ms; }
+    :scope[data-tint-state='error'] .tint-band { pointer-events: none; }
+    .tint-print-canvas {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      transition: filter 900ms ease;
+    }
+    :scope[data-tint-state='error'] .tint-print-canvas { filter: grayscale(1) brightness(0.7); }
+
+    /* Where the key art comes from in the film: a hairline at rest, with the time while you riffle. */
+    .tint-band-mark {
+      position: absolute;
+      inset-block: calc(var(--media-spacing) * -1.5) 0;
+      left: var(--at, 50%);
+      width: 2px;
+      translate: -50% 0;
+      border-radius: 1px;
+      background: #fff;
+      box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45), 0 0 12px 1px var(--tint-accent);
+      pointer-events: none;
+    }
+    :scope:dir(rtl) .tint-band-mark { left: auto; right: var(--at, 50%); translate: 50% 0; }
+    .tint-band-time {
+      position: absolute;
+      bottom: calc(100% + var(--media-spacing) * 1.5);
+      left: 50%;
+      translate: -50% 0;
+      padding: calc(var(--media-spacing) * 0.75) calc(var(--media-spacing) * 2);
+      border-radius: calc(var(--media-spacing) * 1.5);
+      background: oklch(0.12 0.02 var(--tint-h) / 0.82);
+      color: var(--tint-ink);
+      font-size: calc(var(--media-spacing) * 3);
+      font-weight: 620;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity var(--tint-duration-fast) ease;
+    }
+    :scope[data-tint-riffle] .tint-band-time { opacity: 1; }
 
     .tint-fold {
       position: absolute;
       inset: 0;
+      z-index: 3;
       overflow: hidden;
       border-radius: inherit;
     }
@@ -246,7 +317,7 @@
     .tint-intro {
       position: absolute;
       inset-inline: clamp(18px, 4cqi, 40px);
-      bottom: clamp(18px, 4cqi, 40px);
+      bottom: calc(clamp(18px, 5.2cqi, 52px) + clamp(14px, 3.4cqi, 36px));
       z-index: 5;
       display: grid;
       justify-items: start;
@@ -255,6 +326,9 @@
         opacity var(--tint-duration) var(--tint-ease-out),
         translate var(--tint-duration) var(--tint-ease-out);
     }
+
+    /* No storyboard, no band: the title card sits at the bottom. */
+    :scope:not([data-tint-ready]) .tint-intro { bottom: clamp(18px, 4cqi, 40px); }
 
     :scope:not(:is([data-tint-state='poster'], [data-tint-state='ended'])) .tint-intro {
       opacity: 0;
@@ -291,6 +365,51 @@
     .tint-meta-scenes:not([hidden])::before { content: '·'; margin-inline-end: 0.5em; }
     .tint-meta-duration[data-unavailable] { display: none; }
     .tint-meta-duration[data-unavailable] + .tint-meta-scenes::before { content: none; }
+    .tint-meta-facts:empty { display: none; }
+    .tint-meta-facts:not(:empty) + .tint-meta-duration:not([data-unavailable])::before { content: '·'; margin-inline-end: 0.5em; }
+    .tint-meta-facts { display: inline-flex; align-items: center; gap: 0 0.5em; flex-wrap: wrap; }
+
+    /* A boxed badge, the way services show a rating; here, for example, the film's licence. */
+    .tint-badge {
+      display: inline-block;
+      padding: 0 0.42em;
+      border: 1px solid oklch(1 0 0 / 0.42);
+      border-radius: 3px;
+      color: var(--tint-ink);
+      font-size: 0.78em;
+      font-weight: 600;
+      line-height: 1.55;
+      letter-spacing: 0.03em;
+    }
+
+    /* The kicker over the title, small and spaced, like "A Netflix original" or a studio credit. */
+    .tint-kicker {
+      color: var(--tint-ink-2);
+      font-size: clamp(10px, 1.15cqi, 13px);
+      font-weight: 640;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .tint-kicker:empty,
+    .tint-logline:empty { display: none; }
+
+    /* One line about the film, at reading size, at most two lines long. */
+    .tint-logline {
+      max-width: 50ch;
+      margin-top: calc(var(--media-spacing) * -0.5);
+      margin-bottom: clamp(4px, 1.2cqi, 12px);
+      color: oklch(0.975 0.006 var(--tint-h) / 0.82);
+      font-size: clamp(13px, 1.45cqi, 16px);
+      font-weight: 440;
+      line-height: 1.45;
+      text-wrap: pretty;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      overflow: hidden;
+    }
+    .tint-meta:has(+ .tint-logline:not(:empty)) { margin-bottom: 0; }
 
     .tint-start {
       position: relative;
@@ -1031,6 +1150,13 @@
     @container media-root (width < 42rem) {
       .tint-airplay,
       .tint-cast { display: none; }
+      .tint-logline { display: none; }
+    }
+
+    @container media-root (width < 30rem) {
+      .tint-kicker,
+      .tint-meta-facts { display: none; }
+      .tint-meta-facts:not(:empty) + .tint-meta-duration:not([data-unavailable])::before { content: none; }
     }
 
     @container media-root (width < 34rem) {

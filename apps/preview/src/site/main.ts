@@ -111,6 +111,24 @@ $('#player').append(i18n);
 const media = () => player.querySelector('mux-video') as (HTMLElement & HTMLMediaElement) | null;
 const skin = () => player.querySelector<HTMLElement>('.media-skin');
 
+/** The poster's title card, the way a streaming service presents a film: studio, facts, licence, one line. */
+function fillTitleCard(film: Film): void {
+  const set = (selector: string, fill: (el: HTMLElement) => void) => {
+    const el = player.querySelector<HTMLElement>(selector);
+    if (el) fill(el);
+  };
+  set('.tint-kicker', (el) => (el.textContent = 'Blender Studio · Open Movie'));
+  set('.tint-meta-facts', (el) => {
+    const badge = document.createElement('span');
+    badge.className = 'tint-badge';
+    badge.textContent = 'CC BY';
+    badge.title = 'Creative Commons Attribution 4.0';
+    el.replaceChildren(badge, `${film.year} · ${film.genre}`);
+  });
+  set('.tint-logline', (el) => (el.textContent = film.logline));
+}
+fillTitleCard(current);
+
 // ---------------------------------------------------------------- The columns: one per real storyboard frame
 
 /** Each frame becomes one column, drawn from an atlas where it is SLITS pixels wide. */
@@ -682,6 +700,7 @@ function select(film: Film): void {
   autoplayed = false;
   userPaused = false;
   player.setAttribute('content-title', film.title);
+  fillTitleCard(film);
   m?.setAttribute('src', `https://stream.mux.com/${film.id}.m3u8`);
   syncChoice();
   void paintSteps(film);

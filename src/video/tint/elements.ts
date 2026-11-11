@@ -103,6 +103,16 @@ export class TintPrintElement extends UIElement {
   #canvas = document.createElement('canvas');
   #fold = document.createElement('div');
   #live = document.createElement('p');
+  // The key art: a storyboard frame at once (softened), then a sharp still over it when the source can make one.
+  #art = document.createElement('canvas');
+  #artHi = document.createElement('img');
+  #artIndex = -1;
+  #artTimer = 0;
+  // The fingerprint band along the bottom of the poster: point along it to riffle through the film, press to play.
+  #band = document.createElement('div');
+  #mark = document.createElement('span');
+  #markTime = document.createElement('span');
+  #riffle = -1;
   #state: TintState | null = null;
   #frame = -2;
   #hue = 70;
@@ -118,7 +128,17 @@ export class TintPrintElement extends UIElement {
     this.#fold.className = 'tint-fold';
     this.#live.className = 'tint-announcer';
     this.#live.setAttribute('aria-live', 'polite');
-    this.replaceChildren(this.#canvas, this.#fold);
+    this.#art.className = 'tint-art';
+    this.#artHi.className = 'tint-art tint-art-hi';
+    this.#artHi.alt = '';
+    this.#artHi.decoding = 'async';
+    this.#artHi.crossOrigin = 'anonymous';
+    this.#band.className = 'tint-band';
+    this.#mark.className = 'tint-band-mark';
+    this.#markTime.className = 'tint-band-time';
+    this.#mark.append(this.#markTime);
+    this.#band.append(this.#canvas, this.#mark);
+    this.replaceChildren(this.#art, this.#artHi, this.#band, this.#fold);
 
     this.#container = containerOf(this);
     if (!this.#container) return;
@@ -130,6 +150,11 @@ export class TintPrintElement extends UIElement {
     const { signal } = this.#disconnect;
     this.#model.addEventListener('change', this.#onModel, { signal });
     this.#container.addEventListener('keydown', this.#onKey, { signal });
+    this.#band.addEventListener('pointermove', this.#onRiffle, { signal });
+    this.#band.addEventListener('pointerleave', this.#endRiffle, { signal });
+    this.#band.addEventListener('click', this.#onBandPress, { signal });
+    // The band's press is its own: it must not also reach the player's tap-to-pause gesture.
+    for (const type of ['pointerdown', 'pointerup'] as const) this.#band.addEventListener(type, (e) => e.stopPropagation(), { signal });
     this.#resize = new ResizeObserver(() => this.#paint());
     this.#resize.observe(this.#container);
     this.#onModel();
@@ -143,6 +168,7 @@ export class TintPrintElement extends UIElement {
     this.#resize = null;
     this.#live.remove();
     window.clearTimeout(this.#foldTimer);
+    window.clearTimeout(this.#artTimer);
     cancelAnimationFrame(this.#foldRaf);
   }
 
@@ -165,9 +191,11 @@ export class TintPrintElement extends UIElement {
     const target: TintState = error ? 'error' : !started ? 'poster' : ended ? 'ended' : 'playing';
     this.#transition(target);
 
-    // Accent: the film's signature colour on the poster, the current frame's colour after that.
+    // Accent: the key art's colour on the poster (or the riffled frame's), the current frame's colour after that.
     if (model.status === 'ready') {
-      const frame = target === 'poster' ? model.signature() : model.frameAt(time?.currentTime ?? 0);
+      const resting = target === 'poster' || target === 'ended';
+      if (resting && this.#riffle < 0 && this.#artIndex !== model.keyArt()) this.#showArt(model.keyArt(), true);
+      const frame = resting ? (this.#riffle >= 0 ? this.#riffle : model.keyArt()) : model.frameAt(time?.currentTime ?? 0);
       if (frame !== this.#frame) {
         this.#frame = frame;
         this.#setAccent(model, frame, Boolean(time?.seeking));
@@ -191,6 +219,7 @@ export class TintPrintElement extends UIElement {
       this.#runFold('out');
     } else {
       this.#fold.replaceChildren();
+      this.#container?.removeAttribute('data-tint-sheet');
       this.#setState(target);
     }
 
@@ -220,6 +249,7 @@ export class TintPrintElement extends UIElement {
       cancelAnimationFrame(this.#foldRaf);
       window.clearTimeout(this.#foldTimer);
       const playback = this.#playback.value;
+      container.removeAttribute('data-tint-sheet');
       if (direction === 'in') {
         this.#fold.replaceChildren();
         this.#setState(playback?.ended ? 'ended' : 'playing');
@@ -297,7 +327,10 @@ export class TintPrintElement extends UIElement {
     const video = videoOf(container);
 
     type Box = { x: number; y: number; w: number; h: number };
-    const stripe = (i: number): Box => ({ x: (i * W) / N, y: 0, w: W / N + 0.5, h: H });
+    // Each tile starts as its stripe in the poster's fingerprint band.
+    const B = this.#band.getBoundingClientRect();
+    const band = B.width ? { x: B.left - P.left, y: B.top - P.top, w: B.width, h: B.height } : { x: 0, y: 0, w: W, h: H };
+    const stripe = (i: number): Box => ({ x: band.x + (i * band.w) / N, y: band.y, w: band.w / N + 0.5, h: band.h });
     // A short last row is centred, like a printed sheet, rather than left hanging at one edge.
     const lastRow = rows - 1;
     const lastShift = ((cols - (N - lastRow * cols)) * (tw + gap)) / 2;
@@ -366,10 +399,13 @@ export class TintPrintElement extends UIElement {
     };
 
     let heroLive = direction === 'out' && video !== null && video.readyState >= 2 && video.videoWidth > 0;
+    const DARK_IN = 200;
     const draw = (t: number) => {
       g.clearRect(0, 0, W, H);
-      // The room goes dark for the sheet, and the film shows through as the tiles leave.
-      const dark = 1 - step(t, settleAt + SETTLE * 0.5, TOTAL - 40);
+      // The room goes dark over the key art as the sheet opens, and the film shows through as the tiles leave.
+      const dark = step(t, 0, DARK_IN) * (1 - step(t, settleAt + SETTLE * 0.5, TOTAL - 40));
+      // Once the dark is complete the key art can go (and comes back as it lifts, on the way out).
+      container.toggleAttribute('data-tint-sheet', t >= DARK_IN);
       if (dark > 0) {
         g.fillStyle = `rgb(6 6 8 / ${dark})`;
         g.fillRect(0, 0, W, H);
@@ -452,14 +488,103 @@ export class TintPrintElement extends UIElement {
   #paint(): void {
     const model = this.#model;
     if (!model || model.status !== 'ready') return;
-    const rect = this.getBoundingClientRect();
+    const rect = this.#band.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     const print = model.print(rect.width * dpr(), rect.height * dpr(), LIT);
     if (!print) return;
     this.#canvas.width = print.width;
     this.#canvas.height = print.height;
     this.#canvas.getContext('2d')!.drawImage(print, 0, 0);
+    this.#placeMark();
   }
+
+  /** Show a frame as the key art: the storyboard frame now, the sharp still when it arrives. */
+  #showArt(index: number, now: boolean): void {
+    const model = this.#model;
+    const f = model?.frames[index];
+    if (!model || !f) return;
+    if (index !== this.#artIndex) {
+      this.#artIndex = index;
+      const img = model.image(f.url);
+      if (img) {
+        this.#art.width = f.w;
+        this.#art.height = f.h;
+        this.#art.getContext('2d')!.drawImage(img, f.x, f.y, f.w, f.h, 0, 0, f.w, f.h);
+      }
+      this.#artHi.removeAttribute('data-ready');
+      this.#placeMark();
+    }
+    window.clearTimeout(this.#artTimer);
+    const load = () => {
+      const src = model.stillUrl(f.start, this.getBoundingClientRect().width * dpr());
+      if (!src) return;
+      const hi = this.#artHi;
+      hi.onload = () => {
+        if (hi.dataset.src === src && this.#artIndex === index) hi.setAttribute('data-ready', '');
+      };
+      if (hi.dataset.src === src && hi.complete && hi.naturalWidth) return hi.onload(new Event('load'));
+      hi.dataset.src = src;
+      hi.src = src;
+    };
+    // While riffling, only fetch a still once the pointer settles on a frame.
+    if (now) load();
+    else this.#artTimer = window.setTimeout(load, 160);
+  }
+
+  #placeMark(): void {
+    const n = this.#model?.frames.length ?? 0;
+    if (!n || this.#artIndex < 0) return;
+    this.#mark.style.setProperty('--at', `${((this.#artIndex + 0.5) / n) * 100}%`);
+    const f = this.#model!.frames[this.#artIndex]!;
+    this.#markTime.textContent = formatTime(f.start);
+  }
+
+  #resting(): boolean {
+    return this.#state === 'poster' || this.#state === 'ended';
+  }
+
+  #bandIndex(event: PointerEvent | MouseEvent): number {
+    const n = this.#model?.frames.length ?? 0;
+    const r = this.#band.getBoundingClientRect();
+    if (!n || !r.width) return -1;
+    return clamp(Math.floor(((event.clientX - r.left) / r.width) * n), 0, n - 1);
+  }
+
+  #onRiffle = (event: PointerEvent): void => {
+    const model = this.#model;
+    if (!model || model.status !== 'ready' || !this.#resting() || event.pointerType === 'touch') return;
+    const index = this.#bandIndex(event);
+    if (index < 0 || index === this.#riffle) return;
+    this.#riffle = index;
+    this.#container?.setAttribute('data-tint-riffle', '');
+    this.#showArt(index, false);
+    this.#frame = index;
+    this.#setAccent(model, index, true);
+  };
+
+  #endRiffle = (): void => {
+    if (this.#riffle < 0) return;
+    this.#riffle = -1;
+    this.#container?.removeAttribute('data-tint-riffle');
+    const model = this.#model;
+    if (model?.status === 'ready' && this.#resting()) this.#showArt(model.keyArt(), true);
+    this.#frame = -2;
+    this.requestUpdate();
+  };
+
+  /** A press on the band plays the film from that moment. */
+  #onBandPress = (event: MouseEvent): void => {
+    const model = this.#model;
+    const time = this.#time.value;
+    const playback = this.#playback.value;
+    if (!model || model.status !== 'ready' || !this.#resting() || !time || !playback) return;
+    const index = this.#bandIndex(event);
+    if (index < 0) return;
+    event.stopPropagation();
+    const at = model.frames[index]!.start;
+    this.#showArt(index, true);
+    void Promise.resolve(time.seek(at)).finally(() => void playback.play());
+  };
 
   /** `[` and `]` jump between scenes. Typing in a field is left alone. */
   #onKey = (event: KeyboardEvent): void => {
