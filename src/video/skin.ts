@@ -20,6 +20,7 @@ import '@videojs/html/ui/tooltip';
 import '@videojs/html/ui/tooltip-label';
 import '@videojs/html/ui/tooltip-shortcut';
 import '@videojs/html/ui/play-button';
+import '@videojs/html/ui/seek-button';
 import '@videojs/html/ui/time-slider';
 import '@videojs/html/ui/slider-track';
 import '@videojs/html/ui/slider-buffer';

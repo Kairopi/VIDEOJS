@@ -36,6 +36,13 @@ export const tintIcons: Record<string, string> = {
   check: svg('<path d="m5.5 12.5 4 4 9-9"/>'),
   chevron: svg('<path d="m9.5 6.5 5.5 5.5-5.5 5.5"/>'),
   seek: svg('<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v3.7h-3.7"/>'),
+  // Ten seconds back and forward: the restart and seek arcs, opened a little wider, with the step written inside.
+  'seek-back': svg(
+    '<path d="M4.6 12.6a7.5 7.5 0 1 0 2.3-6.1"/><path d="M5.3 3.6v3.8h3.8"/><text x="12.6" y="15.4" fill="currentColor" stroke="none" font-size="7.6" font-weight="760" text-anchor="middle" font-family="inherit" letter-spacing="-0.3">10</text>'
+  ),
+  'seek-forward': svg(
+    '<path d="M19.4 12.6a7.5 7.5 0 1 1-2.3-6.1"/><path d="M18.7 3.6v3.8h-3.8"/><text x="11.4" y="15.4" fill="currentColor" stroke="none" font-size="7.6" font-weight="760" text-anchor="middle" font-family="inherit" letter-spacing="-0.3">10</text>'
+  ),
   speed: svg('<path d="M4.6 16.5a8 8 0 1 1 14.8 0"/><path d="m12 13 3.6-4.2"/>'),
   switches: svg('<path d="M5 8h9M18 8h1M5 16h1M10 16h9"/><circle cx="16" cy="8" r="2"/><circle cx="8" cy="16" r="2"/>'),
   speech: svg('<path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5h-7l-4 3v-3H5A1.5 1.5 0 0 1 3.5 15V8A1.5 1.5 0 0 1 5 6.5Z"/>'),

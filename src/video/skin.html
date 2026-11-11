@@ -36,12 +36,26 @@
 <div class="tint-bar">
 <media-controls-group class="tint-row">
 <media-controls-group class="tint-group tint-group-start">
+<media-seek-button seconds="-10" class="tint-button tint-seek tint-seek-back" id="tint-back-trigger">
+<media-icon family="tint" name="seek-back" class="tint-icon"></media-icon>
+</media-seek-button>
+<media-tooltip trigger="tint-back-trigger" side="top" class="media-popup tint-tooltip">
+<media-tooltip-label></media-tooltip-label>
+<media-tooltip-shortcut class="tint-tooltip-key"></media-tooltip-shortcut>
+</media-tooltip>
 <media-play-button class="tint-button tint-play" id="tint-play-trigger">
 <media-icon family="tint" name="play" class="tint-icon tint-play-icon"></media-icon>
 <media-icon family="tint" name="pause" class="tint-icon tint-pause-icon"></media-icon>
 <media-icon family="tint" name="restart" class="tint-icon tint-restart-icon"></media-icon>
 </media-play-button>
 <media-tooltip trigger="tint-play-trigger" side="top" class="media-popup tint-tooltip">
+<media-tooltip-label></media-tooltip-label>
+<media-tooltip-shortcut class="tint-tooltip-key"></media-tooltip-shortcut>
+</media-tooltip>
+<media-seek-button seconds="10" class="tint-button tint-seek tint-seek-forward" id="tint-forward-trigger">
+<media-icon family="tint" name="seek-forward" class="tint-icon"></media-icon>
+</media-seek-button>
+<media-tooltip trigger="tint-forward-trigger" side="top" class="media-popup tint-tooltip">
 <media-tooltip-label></media-tooltip-label>
 <media-tooltip-shortcut class="tint-tooltip-key"></media-tooltip-shortcut>
 </media-tooltip>
@@ -70,7 +84,6 @@
 <media-buffering-indicator class="tint-sweep"></media-buffering-indicator>
 </media-slider-track>
 <tint-bloom class="tint-bloom"></tint-bloom>
-<span class="tint-strip-end" aria-hidden="true"><media-time class="tint-strip-duration" type="duration"></media-time></span>
 <media-slider-thumb class="tint-head"><media-time class="tint-head-time" type="current" aria-hidden="true"></media-time></media-slider-thumb>
 <media-slider-preview class="tint-preview" overflow="clamp">
 <media-slider-thumbnail class="tint-preview-frame">
@@ -82,6 +95,7 @@
 </span>
 </media-slider-preview>
 </media-time-slider>
+<media-time class="tint-strip-end" type="duration"></media-time>
 <media-controls-group class="tint-group tint-group-end">
 <media-captions-button class="tint-button tint-captions" id="tint-captions-trigger">
 <media-icon family="tint" name="captions-off" class="tint-icon tint-captions-off-icon"></media-icon>
