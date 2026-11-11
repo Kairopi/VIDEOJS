@@ -4,6 +4,7 @@
 <img alt="" decoding="async" class="media-poster-image">
 </media-poster>
 <tint-print class="tint-print"></tint-print>
+<tint-scrub class="tint-scrub"></tint-scrub>
 <div class="tint-intro">
 <!-- Optional, like a streaming title card: fill these in for your film, or leave them empty and they stay hidden. -->
 <p class="tint-kicker"></p>
@@ -22,6 +23,14 @@
 </media-play-button>
 </div>
 <tint-pause class="tint-pause"><media-title class="tint-pause-title"></media-title></tint-pause>
+<!-- The end sheet: the whole film on one page. The title and Replay are yours to restyle; the rest is drawn. -->
+<tint-contact class="tint-contact">
+<media-title class="tint-contact-title"></media-title>
+<media-play-button class="tint-contact-replay">
+<media-icon family="tint" name="restart" class="tint-contact-icon"></media-icon>
+<media-text token="buttons.replay">Replay</media-text>
+</media-play-button>
+</tint-contact>
 <media-error-dialog>
 <media-dialog-backdrop class="tint-dialog-backdrop"></media-dialog-backdrop>
 <media-dialog-popup class="tint-dialog">

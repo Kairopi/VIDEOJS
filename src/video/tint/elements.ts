@@ -82,6 +82,66 @@ function accentCss(model: TintModel, frame: number): string {
   return `oklch(${a.l} ${a.c} ${a.h})`;
 }
 
+type Box = { x: number; y: number; w: number; h: number };
+
+/**
+ * The contact sheet: every frame of the film at the storyboard's own shape, in as many columns as fit the area, with a
+ * short last row centred like a printed sheet. Shared by the unpacking and the end sheet so both land on the same tiles.
+ */
+function sheetGrid(area: Box, n: number, aspect: number, width: number) {
+  const gap = Math.max(1.5, width * 0.0035);
+  // The column count that gives the largest tiles in this area.
+  const fit = (c: number) => {
+    const r = Math.ceil(n / c);
+    return Math.min((area.w - gap * (c - 1)) / c, ((area.h - gap * (r - 1)) / r) * aspect);
+  };
+  let cols = 1;
+  for (let c = 2; c <= n; c++) if (fit(c) > fit(cols)) cols = c;
+  const rows = Math.ceil(n / cols);
+  const tw = Math.max(1, fit(cols));
+  const th = tw / aspect;
+  const gx = area.x + (area.w - (cols * tw + (cols - 1) * gap)) / 2;
+  const gy = area.y + (area.h - (rows * th + (rows - 1) * gap)) / 2;
+  const lastRow = rows - 1;
+  const lastShift = ((cols - (n - lastRow * cols)) * (tw + gap)) / 2;
+  const tile = (i: number): Box => {
+    const r = Math.floor(i / cols);
+    return { x: gx + (i % cols) * (tw + gap) + (r === lastRow ? lastShift : 0), y: gy + r * (th + gap), w: tw, h: th };
+  };
+  return { tile, tw, th, radius: Math.min(6, tw * 0.08) };
+}
+
+/** One storyboard frame as a tile: the picture, clipped round, with a hairline so a black frame still reads as a frame. */
+function drawTile(g: CanvasRenderingContext2D, model: TintModel, i: number, box: Box, radius: number): void {
+  const f = model.frames[i];
+  const img = f && model.image(f.url);
+  if (!f || !img) return;
+  const r = Math.min(radius, box.w / 2, box.h / 2);
+  g.save();
+  g.beginPath();
+  g.roundRect(box.x, box.y, box.w, box.h, r);
+  g.clip();
+  g.drawImage(img, f.x, f.y, f.w, f.h, box.x, box.y, box.w, box.h);
+  g.restore();
+  if (box.w > 8) {
+    g.save();
+    g.strokeStyle = 'rgb(255 255 255 / 0.1)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.roundRect(box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1, Math.max(0, r - 0.5));
+    g.stroke();
+    g.restore();
+  }
+}
+
+/** Where the video draws its picture inside the player (contain, or cover when the page asks for it). */
+function pictureBox(container: HTMLElement, W: number, H: number, aspect: number): Box {
+  const cover = getComputedStyle(container).getPropertyValue('--media-object-fit').trim() === 'cover';
+  const fitW = cover ? Math.max(W, H * aspect) : Math.min(W, H * aspect);
+  const fitH = fitW / aspect;
+  return { x: (W - fitW) / 2, y: (H - fitH) / 2, w: fitW, h: fitH };
+}
+
 /**
  * <tint-print>: the fingerprint poster, the fold and unfold, and the scene accent.
  *
@@ -214,7 +274,7 @@ export class TintPrintElement extends UIElement {
     const canAnimate = prev !== null && !reducedMotion(this) && this.#model?.status === 'ready';
 
     if (canAnimate && (prev === 'poster' || prev === 'ended') && target === 'playing') {
-      this.#runFold('in');
+      this.#runFold('in', prev === 'ended' && this.#container?.hasAttribute('data-tint-contact'));
     } else if (canAnimate && (prev === 'playing' || prev === 'folding') && target === 'ended') {
       this.#runFold('out');
     } else {
@@ -239,10 +299,14 @@ export class TintPrintElement extends UIElement {
    *
    * One 2D canvas over the video; nothing is sampled from the video itself.
    */
-  #runFold(direction: 'in' | 'out'): void {
+  #runFold(direction: 'in' | 'out', fromSheet = false): void {
     const container = this.#container!;
     const model = this.#model;
     const target = container.querySelector<HTMLElement>('[data-tint-fold-target]');
+    // At the end the film packs up into the end sheet and stays there; from the sheet, it unpacks again.
+    const endSheet = container.querySelector<TintContactElement>('tint-contact');
+    const toSheet = direction === 'out' && Boolean(endSheet?.available());
+    const sheetLayout = toSheet || fromSheet;
     const skip = new AbortController();
     const finish = () => {
       skip.abort();
@@ -254,9 +318,10 @@ export class TintPrintElement extends UIElement {
         this.#fold.replaceChildren();
         this.#setState(playback?.ended ? 'ended' : 'playing');
       } else {
-        // Let the poster fade in under the last frame before the canvas goes.
+        // The end sheet (or the poster) draws under the last frame before the canvas goes.
         this.#setState('ended');
-        this.#foldTimer = window.setTimeout(() => this.#fold.replaceChildren(), 200);
+        endSheet?.render();
+        this.#foldTimer = window.setTimeout(() => this.#fold.replaceChildren(), toSheet ? 60 : 200);
       }
     };
     const P = container.getBoundingClientRect();
@@ -269,7 +334,8 @@ export class TintPrintElement extends UIElement {
     this.#setState(direction === 'in' ? 'folding' : 'unfolding');
     // It never stands between the viewer and the film: any key, press or seek ends it on the spot.
     // A press needs a moment's grace, or the very click on Play would cancel it.
-    const armed = performance.now() + 120;
+    // From the end sheet, the seek that picked the frame (or Replay's own rewind) is still arriving: give it longer.
+    const armed = performance.now() + (fromSheet ? 360 : 120);
     const cut = (event: Event) => {
       if (event instanceof KeyboardEvent && ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) return;
       if (performance.now() >= armed) finish();
@@ -306,44 +372,28 @@ export class TintPrintElement extends UIElement {
     const pw = print ? print.width / N : 0;
 
     // The contact sheet: as many columns as fit the player's shape, tiles at the storyboard's own shape.
-    // It sits above the timeline, so the tiles have somewhere to fall to.
+    // It sits above the timeline, so the tiles have somewhere to fall to; or exactly on the end sheet's tiles.
     const aspect = frames[0]!.w / frames[0]!.h || 16 / 9;
     const pad = Math.min(W, H) * 0.05;
-    const area = { x: pad, y: pad, w: W - 2 * pad, h: Math.max(H * 0.4, T.top - P.top - pad * 1.2 - pad) };
-    const cols = Math.max(1, Math.round(Math.sqrt((N * (area.w / area.h)) / aspect)));
-    const rows = Math.ceil(N / cols);
-    const gap = Math.max(1.5, W * 0.0035);
-    const tw = Math.min((area.w - gap * (cols - 1)) / cols, ((area.h - gap * (rows - 1)) / rows) * aspect);
-    const th = tw / aspect;
-    const gx = area.x + (area.w - (cols * tw + (cols - 1) * gap)) / 2;
-    const gy = area.y + (area.h - (rows * th + (rows - 1) * gap)) / 2;
-    const radius = Math.min(6, tw * 0.08);
+    const area = (sheetLayout && endSheet?.area()) || { x: pad, y: pad, w: W - 2 * pad, h: Math.max(H * 0.4, T.top - P.top - pad * 1.2 - pad) };
+    const { tile, th, radius } = sheetGrid(area, N, aspect, W);
 
     // The frame you start on, or end on, is the film itself: its tile on the sheet shows the live video, already
     // playing, and that tile grows into the picture. Live pixels stay sharp at full size and match the video exactly,
     // so the hand-off has no cut. Without a drawable video it falls back to the storyboard frame and a dissolve.
     const time = this.#time.value?.currentTime ?? 0;
-    const hero = clamp(direction === 'in' ? model.frameAt(time) : N - 1, 0, N - 1);
+    const picked = Number(container.dataset.tintFrom);
+    container.removeAttribute('data-tint-from');
+    const hero = clamp(direction === 'in' ? (Number.isInteger(picked) && fromSheet ? picked : model.frameAt(time)) : N - 1, 0, N - 1);
     const video = videoOf(container);
 
-    type Box = { x: number; y: number; w: number; h: number };
     // Each tile starts as its stripe in the poster's fingerprint band.
     const B = this.#band.getBoundingClientRect();
     const band = B.width ? { x: B.left - P.left, y: B.top - P.top, w: B.width, h: B.height } : { x: 0, y: 0, w: W, h: H };
     const stripe = (i: number): Box => ({ x: band.x + (i * band.w) / N, y: band.y, w: band.w / N + 0.5, h: band.h });
-    // A short last row is centred, like a printed sheet, rather than left hanging at one edge.
-    const lastRow = rows - 1;
-    const lastShift = ((cols - (N - lastRow * cols)) * (tw + gap)) / 2;
-    const tile = (i: number): Box => {
-      const r = Math.floor(i / cols);
-      return { x: gx + (i % cols) * (tw + gap) + (r === lastRow ? lastShift : 0), y: gy + r * (th + gap), w: tw, h: th };
-    };
     const slot = (i: number): Box => ({ x: T.left - P.left + (i * T.width) / N, y: T.top - P.top, w: T.width / N + 0.5, h: T.height });
     // The hero lands exactly where the video draws its picture (contain), so the hand-off has no jump.
-    const cover = getComputedStyle(container).getPropertyValue('--media-object-fit').trim() === 'cover';
-    const fitW = cover ? Math.max(W, H * aspect) : Math.min(W, H * aspect);
-    const fitH = fitW / aspect;
-    const full: Box = { x: (W - fitW) / 2, y: (H - fitH) / 2, w: fitW, h: fitH };
+    const full = pictureBox(container, W, H, aspect);
     const mix = (a: Box, b: Box, t: number): Box => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, w: a.w + (b.w - a.w) * t, h: a.h + (b.h - a.h) * t });
 
     // Timing, in ms (about 1.4 s, with the film playing from the first frame, so nobody waits on it).
@@ -449,19 +499,24 @@ export class TintPrintElement extends UIElement {
       }
     };
 
+    // From the end sheet the frames are already open, so only the drop runs; to it, only the rise.
+    const sheetAt = OPEN + OPEN_SPREAD;
+    const from = direction === 'in' ? (fromSheet ? sheetAt : 0) : TOTAL;
+    const to = direction === 'in' ? TOTAL : toSheet ? sheetAt : 0;
+    const length = Math.abs(to - from);
     const start = performance.now();
     const frame = (now: number) => {
-      const elapsed = now - start;
-      draw(direction === 'in' ? elapsed : TOTAL - elapsed);
-      if (elapsed < TOTAL) this.#foldRaf = requestAnimationFrame(frame);
+      const elapsed = Math.min(length, now - start);
+      draw(from + Math.sign(to - from) * elapsed);
+      if (elapsed < length) this.#foldRaf = requestAnimationFrame(frame);
       else finish();
     };
-    draw(direction === 'in' ? 0 : TOTAL);
+    draw(from);
     cancelAnimationFrame(this.#foldRaf);
     this.#foldRaf = requestAnimationFrame(frame);
     // A hidden tab pauses animation frames; the player must not wait on it.
     window.clearTimeout(this.#foldTimer);
-    this.#foldTimer = window.setTimeout(finish, TOTAL + 600);
+    this.#foldTimer = window.setTimeout(finish, length + 600);
   }
 
   #setAccent(model: TintModel, frame: number, seeking: boolean): void {
@@ -641,6 +696,8 @@ export class TintTrackElement extends UIElement {
     this.#lastTime = now;
     const duration = time.duration || this.#model?.duration || 0;
     if (before < 0 || !duration || this.#slider?.hasAttribute('data-dragging')) return;
+    // Only on the playing film: the unpacking and the end sheet have their own motion.
+    if (containerOf(this)?.getAttribute('data-tint-state') !== 'playing') return;
     // Playback moves a fraction of a second per update; anything larger is a jump.
     const jump = now - before;
     if (Math.abs(jump) < 1.5) return;
@@ -673,7 +730,8 @@ export class TintTrackElement extends UIElement {
         { opacity: 1, transform: 'scaleX(1)', offset: 0.5, easing: 'ease-in' },
         { opacity: 0, transform: 'scaleX(1)' },
       ],
-      { duration: 640 }
+      // Short, because it follows every press of the 10 s buttons.
+      { duration: 420 }
     );
   }
 
@@ -1440,8 +1498,528 @@ export class TintPauseElement extends UIElement {
   }
 }
 
+/**
+ * <tint-scrub>: slit-scan scrubbing. Drag the playhead quickly and the picture smears through time: each vertical
+ * slice of the screen shows the same slice of a different moment, the one you are on at the leading edge and the ones
+ * you have just passed trailing behind, the way slit-scan photography records time across space. The faster you drag,
+ * the longer the trail. Slow down or let go and the slices converge on one frame and dissolve into the real picture.
+ *
+ * Drawn from the storyboard on one 2D canvas; skipped under reduced motion.
+ */
+export class TintScrubElement extends UIElement {
+  static readonly tagName = 'tint-scrub';
+
+  #time = new PlayerController(this, playerContext, selectTime);
+  #model: TintModel | null = null;
+  #container: HTMLElement | null = null;
+  #slider: HTMLElement | null = null;
+  #canvas = document.createElement('canvas');
+  #dragging = false;
+  #raf = 0;
+  #last = 0;
+  #u = -1;
+  #prevU = -1;
+  #vel = 0;
+  #len = 0;
+  #dir = 1;
+  #disconnect: AbortController | null = null;
+  #watch: MutationObserver | null = null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.setAttribute('aria-hidden', 'true');
+    this.#canvas.className = 'tint-scrub-canvas';
+    this.replaceChildren(this.#canvas);
+    this.#container = containerOf(this);
+    this.#slider = this.#container?.querySelector('media-time-slider') ?? null;
+    if (!this.#container || !this.#slider) return;
+    this.#model = getModel(this.#container);
+    this.#disconnect = new AbortController();
+    this.#watch = new MutationObserver(() => {
+      const dragging = Boolean(this.#slider?.hasAttribute('data-dragging'));
+      if (dragging === this.#dragging) return;
+      this.#dragging = dragging;
+      this.#prevU = -1;
+      if (dragging && !this.#raf && !reducedMotion(this) && this.#model?.status === 'ready') {
+        this.#last = performance.now();
+        this.#raf = requestAnimationFrame(this.#tick);
+      }
+    });
+    this.#watch.observe(this.#slider, { attributes: true, attributeFilter: ['data-dragging'] });
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#disconnect?.abort();
+    this.#watch?.disconnect();
+    cancelAnimationFrame(this.#raf);
+    this.#raf = 0;
+  }
+
+  #tick = (now: number): void => {
+    this.#raf = 0;
+    const model = this.#model;
+    const slider = this.#slider;
+    if (!model || model.status !== 'ready' || !slider) return this.#hide();
+    const dt = clamp((now - this.#last) / 1000, 0.001, 0.064);
+    this.#last = now;
+    let raw = 0;
+    if (this.#dragging) {
+      const p = parseFloat(getComputedStyle(slider).getPropertyValue('--media-slider-pointer'));
+      if (Number.isFinite(p)) {
+        const u = clamp(p / 100, 0, 1);
+        if (this.#prevU >= 0) raw = (u - this.#prevU) / dt;
+        this.#prevU = u;
+        this.#u = u;
+      }
+    }
+    // The pointer's speed along the film, smoothed so a jittery hand still draws a steady trail.
+    this.#vel += (raw - this.#vel) * (1 - Math.exp(-dt / 0.07));
+    if (Math.abs(this.#vel) > 0.03) this.#dir = Math.sign(this.#vel);
+    const D = this.#time.value?.duration || model.duration;
+    const n = model.frames.length;
+    // Trail length in film seconds: about a third of the film for a sweep across the whole strip in a second.
+    const want = this.#dragging ? Math.min(D * 0.3, Math.abs(this.#vel) * D * 0.4) : 0;
+    this.#len += (want - this.#len) * (1 - Math.exp(-dt / (want > this.#len ? 0.05 : 0.14)));
+    // Seen only once the trail spans a few frames; below that it fades back to the real picture.
+    const span = n && D ? this.#len / (D / n) : 0;
+    const t = clamp((span - 0.8) / 2, 0, 1);
+    const alpha = t * t * (3 - 2 * t);
+    if (alpha > 0.01 && this.#u >= 0) this.#draw(model, D, alpha);
+    else this.#hide();
+    if (this.#dragging || alpha > 0.01) this.#raf = requestAnimationFrame(this.#tick);
+  };
+
+  #hide(): void {
+    this.#canvas.style.opacity = '0';
+    this.#container?.removeAttribute('data-tint-scrubbing');
+  }
+
+  #draw(model: TintModel, D: number, alpha: number): void {
+    const container = this.#container!;
+    const W = container.clientWidth;
+    const H = container.clientHeight;
+    if (!W || !H) return;
+    // Storyboard frames are small: a lower-resolution canvas costs nothing in sharpness.
+    const k = Math.min(1.5, dpr());
+    if (this.#canvas.width !== Math.round(W * k) || this.#canvas.height !== Math.round(H * k)) {
+      this.#canvas.width = Math.round(W * k);
+      this.#canvas.height = Math.round(H * k);
+    }
+    const g = this.#canvas.getContext('2d')!;
+    g.setTransform(k, 0, 0, k, 0, 0);
+    g.clearRect(0, 0, W, H);
+    const f0 = model.frames[0]!;
+    const aspect = f0.w / f0.h || 16 / 9;
+    const box = pictureBox(container, W, H, aspect);
+    g.fillStyle = '#000';
+    g.fillRect(box.x, box.y, box.w, box.h);
+    g.imageSmoothingQuality = 'high';
+
+    const c = this.#u * D;
+    const L = this.#len;
+    const forward = this.#dir >= 0;
+    // Time at a point across the picture: now at the leading edge, further back toward the trailing edge, with the
+    // slices widest near now and thinning out into the past, like a long exposure.
+    const timeAt = (q: number) => (forward ? c - L * (1 - q) ** 1.4 : c + L * q ** 1.4);
+    const STEP = 2;
+    const cuts: number[] = [];
+    let runStart = box.x;
+    let runFrame = model.frameAt(timeAt(0));
+    const paint = (x0: number, x1: number, i: number) => {
+      const f = model.frames[i];
+      const img = f && model.image(f.url);
+      if (!f || !img || x1 <= x0) return;
+      const q0 = (x0 - box.x) / box.w;
+      const q1 = (x1 - box.x) / box.w;
+      g.drawImage(img, f.x + q0 * f.w, f.y, (q1 - q0) * f.w, f.h, x0, box.y, x1 - x0 + 0.5, box.h);
+    };
+    for (let x = box.x + STEP; x <= box.x + box.w + STEP; x += STEP) {
+      const xe = Math.min(x, box.x + box.w);
+      const i = model.frameAt(clamp(timeAt((xe - box.x) / box.w), 0, D));
+      if (i !== runFrame || xe >= box.x + box.w) {
+        paint(runStart, xe, runFrame);
+        if (xe < box.x + box.w) cuts.push(xe);
+        runStart = xe;
+        runFrame = i;
+      }
+    }
+    // The seams between moments, as fine light lines, and the past falling into shadow toward the trailing edge.
+    g.fillStyle = 'rgb(255 255 255 / 0.14)';
+    for (const x of cuts) g.fillRect(Math.round(x), box.y, 1, box.h);
+    const shade = g.createLinearGradient(forward ? box.x + box.w : box.x, 0, forward ? box.x : box.x + box.w, 0);
+    shade.addColorStop(0, 'rgb(0 0 0 / 0)');
+    shade.addColorStop(0.35, 'rgb(0 0 0 / 0.08)');
+    shade.addColorStop(1, 'rgb(0 0 0 / 0.5)');
+    g.fillStyle = shade;
+    g.fillRect(box.x, box.y, box.w, box.h);
+    this.#canvas.style.opacity = alpha.toFixed(3);
+    container.setAttribute('data-tint-scrubbing', '');
+  }
+}
+
+/**
+ * <tint-contact>: the end sheet. When the film ends, the timeline rises back into a contact sheet of the whole film and
+ * stays there: every storyboard frame in order, the way Brendan Dawes's Cinema Redux prints a film on one page. Point
+ * at a frame to see its scene; press it to play from there. Replay starts again from the top, and Save poster
+ * downloads the sheet as a print-sized PNG with the title and the fingerprint.
+ *
+ * Keyboard: each scene is a button over its first frame, then Replay, then Save poster.
+ */
+export class TintContactElement extends UIElement {
+  static readonly tagName = 'tint-contact';
+
+  #time = new PlayerController(this, playerContext, selectTime);
+  #playback = new PlayerController(this, playerContext, selectPlayback);
+  #model: TintModel | null = null;
+  #container: HTMLElement | null = null;
+  #head = document.createElement('div');
+  #kicker = document.createElement('p');
+  #canvas = document.createElement('canvas');
+  #scenes = document.createElement('div');
+  #tip = document.createElement('span');
+  #foot = document.createElement('div');
+  #save = document.createElement('button');
+  #hover = -1;
+  #shown = false;
+  #disconnect: AbortController | null = null;
+  #watch: MutationObserver | null = null;
+  #resize: ResizeObserver | null = null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.setAttribute('role', 'group');
+    this.setAttribute('aria-label', 'The whole film');
+    const title = this.querySelector('media-title');
+    const replay = this.querySelector('media-play-button');
+    this.#head.className = 'tint-contact-head';
+    this.#kicker.className = 'tint-contact-kicker';
+    this.#head.append(this.#kicker);
+    if (title) this.#head.append(title);
+    this.#canvas.className = 'tint-contact-canvas';
+    this.#canvas.setAttribute('aria-hidden', 'true');
+    this.#scenes.className = 'tint-contact-scenes';
+    this.#tip.className = 'tint-contact-tip';
+    this.#tip.setAttribute('aria-hidden', 'true');
+    this.#foot.className = 'tint-contact-foot';
+    this.#save.type = 'button';
+    this.#save.className = 'tint-contact-save';
+    this.#save.innerHTML = '<media-icon family="tint" name="download" class="tint-contact-icon"></media-icon>';
+    this.#save.append(text('tint.savePoster', 'Save poster'));
+    const hint = document.createElement('span');
+    hint.className = 'tint-contact-hint';
+    hint.append(text('tint.pickFrame', 'Pick any frame to play from there'));
+    if (replay) this.#foot.append(replay);
+    this.#foot.append(this.#save, hint);
+    this.replaceChildren(this.#canvas, this.#head, this.#scenes, this.#tip, this.#foot);
+
+    this.#container = containerOf(this);
+    if (!this.#container) return;
+    this.#model = getModel(this.#container);
+    this.#disconnect = new AbortController();
+    const { signal } = this.#disconnect;
+    this.#model.addEventListener('change', () => ((this.#hover = -1), this.#scenes.replaceChildren(), this.#sync()), { signal });
+    this.#canvas.addEventListener('pointermove', this.#onMove, { signal });
+    this.#canvas.addEventListener('pointerleave', () => this.#setHover(-1), { signal });
+    this.#canvas.addEventListener('click', this.#onPick, { signal });
+    // The press is the sheet's own, not the player's tap-to-pause.
+    for (const type of ['pointerdown', 'pointerup'] as const) this.addEventListener(type, (e) => e.stopPropagation(), { signal });
+    replay?.addEventListener('click', () => this.#container?.setAttribute('data-tint-from', '0'), { signal, capture: true });
+    this.#save.addEventListener('click', () => void this.#savePoster(), { signal });
+    this.#watch = new MutationObserver(() => this.#sync());
+    this.#watch.observe(this.#container, { attributes: true, attributeFilter: ['data-tint-state'] });
+    this.#resize = new ResizeObserver(() => this.#sync());
+    this.#resize.observe(this.#container);
+    this.#sync();
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#disconnect?.abort();
+    this.#watch?.disconnect();
+    this.#resize?.disconnect();
+  }
+
+  /** Whether the sheet can be shown: the storyboard is read and the player is big enough for it to mean something. */
+  available(): boolean {
+    const c = this.#container;
+    return Boolean(this.#model?.status === 'ready' && this.#model.frames.length > 1 && c && c.clientWidth >= 300 && c.clientHeight >= 190);
+  }
+
+  /** Where the tiles go, in the player's coordinates: between the title and the buttons. */
+  area(): Box | null {
+    const c = this.#container;
+    if (!c || !this.available()) return null;
+    const P = c.getBoundingClientRect();
+    const head = this.#head.getBoundingClientRect();
+    const foot = this.#foot.getBoundingClientRect();
+    const pad = clamp(P.width * 0.04, 14, 40);
+    const gap = clamp(P.height * 0.035, 8, 24);
+    const top = head.bottom - P.top + gap;
+    const bottom = foot.top - P.top - gap;
+    return { x: pad, y: top, w: P.width - 2 * pad, h: Math.max(40, bottom - top) };
+  }
+
+  #sync(): void {
+    const container = this.#container;
+    if (!container) return;
+    const state = container.getAttribute('data-tint-state');
+    const shown = state === 'ended' && this.available();
+    if (shown !== this.#shown) {
+      this.#shown = shown;
+      container.toggleAttribute('data-tint-contact', shown);
+      if (shown) {
+        this.#fill();
+        // Focus that was on a control now hidden (the bar's Play) moves to Replay, not off into the page.
+        requestAnimationFrame(() => {
+          const active = container.ownerDocument.activeElement as HTMLElement | null;
+          if (active && active !== container && container.contains(active) && !this.contains(active) && !active.checkVisibility?.()) {
+            this.querySelector<HTMLElement>('media-play-button')?.focus();
+          }
+        });
+      } else this.#setHover(-1);
+    }
+    if (shown) this.render();
+  }
+
+  #fill(): void {
+    const model = this.#model!;
+    const words = [`${model.frames.length} frames`];
+    if (model.scenes.length > 1) words.push(`${model.scenes.length} scenes`);
+    if (model.duration) words.push(formatTime(model.duration));
+    this.#kicker.replaceChildren(text('tint.wholeFilm', 'The whole film'), document.createTextNode(` · ${words.join(' · ')}`));
+  }
+
+  #grid() {
+    const area = this.area();
+    const model = this.#model;
+    if (!area || !model) return null;
+    const f0 = model.frames[0]!;
+    return sheetGrid(area, model.frames.length, f0.w / f0.h || 16 / 9, this.#container!.clientWidth);
+  }
+
+  /** Draw the sheet, with the pointed-at scene lit and the rest held back. */
+  render(): void {
+    const model = this.#model;
+    const container = this.#container;
+    const grid = this.#grid();
+    if (!model || !container || !grid || !this.#shown) return;
+    const W = container.clientWidth;
+    const H = container.clientHeight;
+    const k = dpr();
+    if (this.#canvas.width !== Math.round(W * k) || this.#canvas.height !== Math.round(H * k)) {
+      this.#canvas.width = Math.round(W * k);
+      this.#canvas.height = Math.round(H * k);
+    }
+    const g = this.#canvas.getContext('2d')!;
+    g.setTransform(k, 0, 0, k, 0, 0);
+    // The same dark as the unpacking's room, so the hand-off from it has no seam.
+    g.fillStyle = 'rgb(6 6 8)';
+    g.fillRect(0, 0, W, H);
+    const scene = this.#hover >= 0 ? model.sceneAt(model.frames[this.#hover]!.start) : -1;
+    model.frames.forEach((f, i) => {
+      g.globalAlpha = scene < 0 || model.sceneAt(f.start) === scene ? 1 : 0.38;
+      drawTile(g, model, i, grid.tile(i), grid.radius);
+    });
+    g.globalAlpha = 1;
+    if (this.#hover >= 0) {
+      const b = grid.tile(this.#hover);
+      g.lineWidth = 4;
+      g.strokeStyle = 'rgb(0 0 0 / 0.6)';
+      g.beginPath();
+      g.roundRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4, grid.radius + 2);
+      g.stroke();
+      g.lineWidth = 2;
+      g.strokeStyle = accentCss(model, this.#hover);
+      g.beginPath();
+      g.roundRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4, grid.radius + 2);
+      g.stroke();
+    }
+    this.#placeScenes(grid);
+  }
+
+  /** One button per scene, over its first frame, for the keyboard. */
+  #placeScenes(grid: ReturnType<typeof sheetGrid>): void {
+    const model = this.#model!;
+    const scenes = model.scenes.length > 1 ? model.scenes : [{ index: 0, start: 0, end: model.duration, face: 0, title: '' }];
+    if (this.#scenes.childElementCount !== scenes.length) {
+      this.#scenes.replaceChildren(
+        ...scenes.map((s, k) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'tint-contact-scene';
+          const first = model.frameAt(s.start);
+          b.setAttribute('aria-label', `Play from ${s.title || `scene ${k + 1}`}, ${spokenTime(s.start)}`);
+          b.addEventListener('click', () => this.#play(first));
+          b.addEventListener('focus', () => this.#setHover(first));
+          b.addEventListener('blur', () => this.#setHover(-1));
+          return b;
+        })
+      );
+    }
+    [...this.#scenes.children].forEach((el, k) => {
+      const b = grid.tile(model.frameAt(scenes[k]!.start));
+      const s = (el as HTMLElement).style;
+      s.left = `${b.x}px`;
+      s.top = `${b.y}px`;
+      s.width = `${b.w}px`;
+      s.height = `${b.h}px`;
+    });
+  }
+
+  #indexAt(event: PointerEvent | MouseEvent): number {
+    const grid = this.#grid();
+    const model = this.#model;
+    const c = this.#container;
+    if (!grid || !model || !c) return -1;
+    const P = c.getBoundingClientRect();
+    const x = event.clientX - P.left;
+    const y = event.clientY - P.top;
+    for (let i = 0; i < model.frames.length; i++) {
+      const b = grid.tile(i);
+      if (x >= b.x - 1 && x <= b.x + b.w + 1 && y >= b.y - 1 && y <= b.y + b.h + 1) return i;
+    }
+    return -1;
+  }
+
+  #onMove = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch') return;
+    this.#setHover(this.#indexAt(event));
+  };
+
+  #onPick = (event: MouseEvent): void => {
+    const i = this.#indexAt(event);
+    if (i >= 0) this.#play(i);
+  };
+
+  #setHover(i: number): void {
+    if (i === this.#hover) return;
+    this.#hover = i;
+    this.#canvas.style.cursor = i >= 0 ? 'pointer' : '';
+    const model = this.#model;
+    const grid = this.#grid();
+    if (i >= 0 && model && grid) {
+      const f = model.frames[i]!;
+      const k = model.sceneAt(f.start);
+      const title = model.scenes[k]?.title;
+      const b = grid.tile(i);
+      this.#tip.replaceChildren(
+        ...(model.scenes.length > 1 ? [title ? document.createTextNode(title) : text('tint.scene', 'Scene'), document.createTextNode(title ? '' : ` ${k + 1}`)] : []),
+        Object.assign(document.createElement('b'), { textContent: formatTime(f.start) })
+      );
+      this.#tip.style.left = `${b.x + b.w / 2}px`;
+      this.#tip.style.top = `${b.y}px`;
+      this.#tip.setAttribute('data-open', '');
+    } else this.#tip.removeAttribute('data-open');
+    this.render();
+  }
+
+  #play(i: number): void {
+    const model = this.#model;
+    const time = this.#time.value;
+    const playback = this.#playback.value;
+    const f = model?.frames[i];
+    if (!f || !time || !playback) return;
+    this.#container?.setAttribute('data-tint-from', String(i));
+    void Promise.resolve(time.seek(f.start)).finally(() => void playback.play());
+  }
+
+  /** A 3:4 print of the sheet: kicker, title, every frame, the fingerprint, and the facts underneath. */
+  async #savePoster(): Promise<void> {
+    const model = this.#model;
+    const container = this.#container;
+    if (!model || model.status !== 'ready' || !container) return;
+    await document.fonts?.ready;
+    const W = 1800;
+    const H = 2400;
+    const m = 120;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const g = canvas.getContext('2d')!;
+    const hue = model.accentOf(model.signature()).h;
+    g.fillStyle = '#0b0b0d';
+    g.fillStyle = `oklch(0.14 0.018 ${hue})`;
+    g.fillRect(0, 0, W, H);
+    const font = getComputedStyle(this).fontFamily || 'system-ui, sans-serif';
+    const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+    const title = clean(this.querySelector('media-title')?.textContent) || clean(container.querySelector('media-title')?.textContent) || 'Untitled';
+    const kicker = clean(container.querySelector('.tint-kicker')?.textContent);
+    const facts = clean(container.querySelector('.tint-meta-facts')?.textContent);
+    const ink = 'rgb(246 244 240)';
+    const ink2 = 'rgb(246 244 240 / 0.62)';
+    g.textBaseline = 'alphabetic';
+
+    let y = m + 34;
+    if (kicker) {
+      g.fillStyle = ink2;
+      g.font = `650 30px ${font}`;
+      g.letterSpacing = '5px';
+      g.fillText(kicker.toUpperCase(), m, y);
+      y += 40;
+    }
+    g.letterSpacing = '-4px';
+    // Wide, as on the player's title card (Mona Sans has a width axis).
+    g.fontStretch = 'expanded';
+    let size = 168;
+    g.font = `800 ${size}px ${font}`;
+    while (size > 72 && g.measureText(title).width > W - 2 * m) g.font = `800 ${(size -= 8)}px ${font}`;
+    y += size * 0.92;
+    g.fillStyle = ink;
+    g.fillText(title, m - 4, y);
+    g.letterSpacing = '0px';
+    g.fontStretch = 'normal';
+
+    // The sheet, then the fingerprint under it: the same film twice, as pictures and as colour.
+    const bandH = 96;
+    const bandY = H - m - 110 - bandH;
+    const area = { x: m, y: y + 70, w: W - 2 * m, h: bandY - 70 - (y + 70) };
+    const f0 = model.frames[0]!;
+    const grid = sheetGrid(area, model.frames.length, f0.w / f0.h || 16 / 9, W * 1.6);
+    model.frames.forEach((_, i) => drawTile(g, model, i, grid.tile(i), grid.radius * 1.4));
+    const print = model.print(W - 2 * m, bandH, LIT);
+    if (print) {
+      g.save();
+      g.beginPath();
+      g.roundRect(m, bandY, W - 2 * m, bandH, 12);
+      g.clip();
+      g.drawImage(print, m, bandY);
+      g.restore();
+    }
+    g.font = `560 26px ${font}`;
+    g.fillStyle = ink2;
+    g.fillText('0:00', m, bandY + bandH + 40);
+    g.textAlign = 'right';
+    g.fillText(formatTime(model.duration), W - m, bandY + bandH + 40);
+    g.textAlign = 'left';
+
+    const line = [facts, model.scenes.length > 1 ? `${model.scenes.length} scenes` : '', `${model.frames.length} frames`].filter(Boolean).join('  ·  ');
+    g.font = `560 30px ${font}`;
+    g.fillStyle = ink;
+    g.fillText(line, m, H - m);
+    g.textAlign = 'right';
+    g.fillStyle = ink2;
+    g.fillText('Tint for Video.js', W - m, H - m);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      try {
+        canvas.toBlob(resolve, 'image/png');
+      } catch {
+        resolve(null);
+      }
+    });
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'film'}-tint-poster.png`;
+    a.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+}
+
 export function defineTintElements(): void {
-  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement, TintPauseElement]) {
+  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement, TintPauseElement, TintScrubElement, TintContactElement]) {
     if (!customElements.get(element.tagName)) customElements.define(element.tagName, element);
   }
 }

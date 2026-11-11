@@ -34,6 +34,8 @@ export const tintIcons: Record<string, string> = {
     true
   ),
   check: svg('<path d="m5.5 12.5 4 4 9-9"/>'),
+  // Save: an arrow down into a tray.
+  download: svg('<path d="M12 4.5v10M7.5 10.5l4.5 4.5 4.5-4.5"/><path d="M4.5 15.5v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2"/>'),
   chevron: svg('<path d="m9.5 6.5 5.5 5.5-5.5 5.5"/>'),
   seek: svg('<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v3.7h-3.7"/>'),
   // Ten seconds back and forward: the restart and seek arcs, opened a little wider, with the step written inside.

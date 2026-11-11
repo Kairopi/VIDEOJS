@@ -1362,6 +1362,164 @@
       .tint-indicator { background: var(--tint-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
     }
 
+    /* ---------- Slit-scan scrubbing ---------- */
+
+    /* Over the picture, under the controls: it only shows while the playhead is dragged fast. */
+    .tint-scrub {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      overflow: hidden;
+      border-radius: inherit;
+      pointer-events: none;
+    }
+    .tint-scrub-canvas { display: block; width: 100%; height: 100%; opacity: 0; }
+    /* The pause card has nothing to say while the film is a smear. */
+    :scope[data-tint-scrubbing] .tint-pause,
+    :scope[data-tint-scrubbing]::before { opacity: 0 !important; transition-duration: 0ms; }
+    @media (prefers-reduced-motion: reduce), (forced-colors: active) { .tint-scrub { display: none; } }
+    :where([data-tint-motion='reduce']) .tint-scrub { display: none; }
+
+    /* ---------- End sheet: the whole film on one page ---------- */
+
+    .tint-contact {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      overflow: hidden;
+      border-radius: inherit;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    :scope[data-tint-contact] .tint-contact { visibility: visible; pointer-events: auto; }
+    /* The poster underneath is out of reach while the sheet is up. */
+    :scope[data-tint-contact] :is(.tint-intro, .tint-band) { visibility: hidden; pointer-events: none; }
+
+    .tint-contact-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
+    /* The words arrive just after the frames land, and leave at once. */
+    .tint-contact-head,
+    .tint-contact-foot {
+      position: absolute;
+      inset-inline: clamp(14px, 4cqi, 40px);
+      opacity: 0;
+      translate: 0 6px;
+      transition: opacity 120ms ease, translate 120ms ease;
+    }
+    :scope[data-tint-contact] :is(.tint-contact-head, .tint-contact-foot) {
+      opacity: 1;
+      translate: 0 0;
+      transition: opacity 320ms var(--tint-ease-out) 140ms, translate 420ms var(--tint-ease-out) 140ms;
+    }
+    .tint-contact-head {
+      top: clamp(14px, 3.6cqi, 36px);
+      display: grid;
+      gap: clamp(2px, 0.6cqi, 6px);
+    }
+    .tint-contact-kicker {
+      color: var(--tint-ink-2);
+      font-size: clamp(10px, 1.15cqi, 12.5px);
+      font-weight: 650;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-variant-numeric: tabular-nums;
+    }
+    .tint-contact-title {
+      font-size: clamp(18px, 3.6cqi, 40px);
+      font-stretch: 125%;
+      font-weight: 780;
+      line-height: 0.98;
+      letter-spacing: -0.025em;
+      text-wrap: balance;
+    }
+    .tint-contact-foot {
+      bottom: clamp(14px, 3.4cqi, 34px);
+      display: flex;
+      align-items: center;
+      gap: calc(var(--media-spacing) * 2.5);
+    }
+    .tint-contact-replay,
+    .tint-contact-save {
+      display: inline-flex;
+      align-items: center;
+      gap: calc(var(--media-spacing) * 2);
+      height: calc(var(--media-spacing) * 10);
+      padding-inline: calc(var(--media-spacing) * 3.5) calc(var(--media-spacing) * 4.5);
+      border: 0;
+      border-radius: 999px;
+      font: inherit;
+      font-size: calc(var(--media-spacing) * 3.5);
+      font-weight: 640;
+      cursor: pointer;
+      transition: scale var(--tint-duration-press) ease, filter var(--tint-duration-fast) ease, background-color var(--tint-duration-fast) ease;
+    }
+    .tint-contact-replay { background: var(--tint-accent); color: var(--tint-on-accent); }
+    .tint-contact-save { background: var(--tint-raised); color: var(--tint-ink); box-shadow: inset 0 0 0 1px var(--tint-hairline); }
+    :is(.tint-contact-replay, .tint-contact-save):active { scale: 0.96; }
+    @media (hover: hover) {
+      .tint-contact-replay:hover { filter: brightness(1.08); }
+      .tint-contact-save:hover { background: var(--tint-raised-strong); }
+    }
+    :is(.tint-contact-replay, .tint-contact-save):focus-visible {
+      outline: 2px solid var(--tint-ink);
+      outline-offset: 3px;
+      box-shadow: 0 0 0 6px var(--tint-halo);
+    }
+    .tint-contact-icon { width: calc(var(--media-spacing) * 4.5); height: calc(var(--media-spacing) * 4.5); }
+    .tint-contact-hint {
+      margin-inline-start: auto;
+      color: var(--tint-ink-2);
+      font-size: clamp(11px, 1.3cqi, 13.5px);
+      font-weight: 480;
+    }
+    @media (hover: none) { .tint-contact-hint { display: none; } }
+
+    /* Each scene's first frame, for the keyboard: invisible to the pointer, ringed when focused. */
+    .tint-contact-scene {
+      position: absolute;
+      padding: 0;
+      border: 0;
+      border-radius: calc(var(--media-spacing) * 1.5);
+      background: transparent;
+      pointer-events: none;
+    }
+    .tint-contact-scene:focus-visible {
+      outline: 2px solid var(--tint-ink);
+      outline-offset: 3px;
+      box-shadow: 0 0 0 6px var(--tint-halo);
+    }
+
+    /* The moment under the pointer, above its frame. */
+    .tint-contact-tip {
+      position: absolute;
+      z-index: 1;
+      display: flex;
+      gap: 0.5em;
+      translate: -50% calc(-100% - 8px);
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: oklch(0.12 0.02 var(--tint-h) / 0.86);
+      box-shadow: inset 0 0 0 1px var(--tint-hairline);
+      color: var(--tint-ink-2);
+      font-size: 12.5px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--tint-duration-fast) ease;
+    }
+    .tint-contact-tip b { color: var(--tint-ink); font-weight: 650; }
+    .tint-contact-tip[data-open] { opacity: 1; }
+
+    @container media-root (width < 34rem) {
+      .tint-contact-hint { display: none; }
+      .tint-contact-kicker { display: none; }
+    }
+    @media (forced-colors: active) {
+      :is(.tint-contact-replay, .tint-contact-save) { border: 1px solid ButtonText; }
+    }
+
     /* ---------- Fit the available space ---------- */
 
     @container media-root (width < 42rem) {
