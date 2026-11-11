@@ -666,10 +666,11 @@ export class TintTrackElement extends UIElement {
       track?.style.removeProperty('--tint-cuts');
       return;
     }
-    const width = this.getBoundingClientRect().width;
+    const rect = this.getBoundingClientRect();
+    const width = rect.width;
     if (!width) return;
-    // Drawn at the expanded height so it stays sharp when the timeline grows.
-    const height = 28;
+    // Drawn at the strip's own height, so the stripes stay crisp however tall the bar is.
+    const height = Math.max(28, Math.round(rect.height));
     for (const [canvas, filter] of [
       [this.#dim, DIM],
       [this.#lit, LIT],
@@ -862,8 +863,9 @@ export class TintBloomElement extends UIElement {
     const t = track.getBoundingClientRect();
     const player = containerOf(this)?.getBoundingClientRect();
     const W = t.width;
-    const H = Math.round(Math.min(124, Math.max(54, (player?.height ?? 300) * 0.24)));
     const base = Math.max(1, t.height);
+    // Frames rise well clear of the strip, however tall the strip is.
+    const H = Math.round(Math.max(base + 52, Math.min(base + 96, (player?.height ?? 300) * 0.26)));
     // Sit on the track and rise from it; lift the time label above the tallest frame.
     this.style.left = `${t.left - s.left}px`;
     this.style.width = `${W}px`;
@@ -879,6 +881,15 @@ export class TintBloomElement extends UIElement {
     g.setTransform(k, 0, 0, k, 0, 0);
     g.clearRect(0, 0, W, H);
     this.#canvas.style.opacity = String(Math.min(1, open * 1.6));
+    // Keep to the strip's rounded corners where it is strip-high; frames that rise may use the space above it.
+    const r = Math.min(base / 2, parseFloat(getComputedStyle(track).borderTopLeftRadius) || 0);
+    g.save();
+    if (r > 0) {
+      g.beginPath();
+      g.roundRect(0, H - base, W, base, r);
+      g.rect(r, 0, W - 2 * r, H - base + r);
+      g.clip();
+    }
 
     // Where we are looking: the pointer while pointing or dragging, otherwise the playhead.
     const css = getComputedStyle(slider);
@@ -899,7 +910,8 @@ export class TintBloomElement extends UIElement {
     // and stripes beyond its reach keep their place, so only the part of the film you are looking at opens.
     const f0 = model.frames[focusIndex]!;
     const aspect = f0.w && f0.h ? f0.w / f0.h : 16 / 9;
-    const target = Math.min(H * aspect, W * 0.24);
+    // The strip shares the bar with the controls, so on a short strip the lens may take a larger share of it.
+    const target = Math.min(H * aspect, Math.max(W * 0.24, Math.min(W * 0.5, 300)));
     const reach = Math.min(0.5, (1.6 * target) / W);
     const d = Math.max(0, (target / unit - 1) * open);
     const lens = (q: number) => ((d + 1) * q) / (d * q + 1);
@@ -933,8 +945,8 @@ export class TintBloomElement extends UIElement {
         const y = H - h;
         const gap = w > 14 ? 1 : 0;
         if (grow < 1) {
-          // As a stripe: the whole frame squeezed to its width, as in the fingerprint.
-          g.globalAlpha = 1;
+          // As a stripe: the whole frame squeezed to its width, as in the fingerprint (and as dim ahead as the strip).
+          g.globalAlpha = f.start < now ? 1 : 0.62;
           g.drawImage(src, f.x, f.y, f.w, f.h, x0, y, w + 0.4, h);
         }
         if (grow > 0) {
@@ -955,6 +967,7 @@ export class TintBloomElement extends UIElement {
       }
     }
     g.globalAlpha = 1;
+    g.restore();
     // The time and scene ride just above the frame you will land on.
     slider.style.setProperty('--tint-bloom-lift', `${top - (t.bottom - s.top) + 10}px`);
 

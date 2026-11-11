@@ -44,8 +44,11 @@
 
     --tint-control: calc(var(--media-spacing) * 11);
     --tint-icon: calc(var(--media-spacing) * 6);
-    --tint-track-rest: calc(var(--media-spacing) * 3);
-    --tint-track-open: calc(var(--media-spacing) * 6.5);
+    /* The bar is three tiles of one height: two glass groups of controls, and the film strip between them. */
+    --tint-strip: calc(var(--tint-control) + var(--media-spacing) * 2);
+    --tint-radius-group: calc(var(--tint-radius-button) + var(--media-spacing));
+    --tint-track-rest: var(--tint-strip);
+    --tint-track-open: var(--tint-strip);
 
     --media-video-border-radius: var(--tint-radius-player);
     --media-ring: var(--tint-accent);
@@ -502,7 +505,7 @@
       position: absolute;
       inset: auto 0 0;
       z-index: 9;
-      height: max(46%, calc(var(--media-spacing) * 44));
+      height: max(34%, calc(var(--media-spacing) * 36));
       pointer-events: none;
       background: linear-gradient(
         to top,
@@ -524,9 +527,8 @@
     .tint-bar {
       position: absolute;
       inset: auto 0 0;
-      display: grid;
-      gap: calc(var(--media-spacing) * 0.5);
-      padding: 0 clamp(8px, 2cqi, 20px) clamp(4px, 1.2cqi, 12px);
+      display: block;
+      padding: 0 clamp(8px, 1.6cqi, 16px) clamp(8px, 1.6cqi, 16px);
       pointer-events: auto;
       transition:
         opacity var(--media-duration-controls) ease,
@@ -545,60 +547,51 @@
       pointer-events: none;
     }
 
-    /* While the fingerprint pours in, only the timeline's place is shown. */
-    :scope[data-tint-state='folding'] .tint-row { opacity: 0; }
+    /* While the fingerprint pours in, only the strip's place is shown, for the frames to land in. */
+    :scope[data-tint-state='folding'] .tint-group,
+    :scope[data-tint-state='folding'] .tint-strip-end { opacity: 0; }
     :scope[data-tint-state='folding'] :is(.tint-track-print, .tint-head) { opacity: 0; transition: none; }
-    .tint-row,
+    .tint-group,
+    .tint-strip-end,
     .tint-track-print,
     .tint-head { transition: opacity var(--tint-duration) var(--tint-ease-out); }
 
     /* ---------- Timeline: the film's fingerprint ---------- */
 
+    /* The strip: the whole film as one tall tile, lit where you have watched and dim ahead. It is the bar. */
     .tint-timeline {
       position: relative;
       display: flex;
+      flex: 1 1 auto;
       align-items: center;
-      height: calc(var(--media-spacing) * 8);
+      min-width: 0;
+      height: var(--tint-strip);
       cursor: pointer;
       outline: none;
     }
     .tint-timeline[data-disabled] { cursor: default; opacity: 0.5; }
-    /* A thumb-sized hit area on touch screens; the track itself stays slim. */
-    @media (pointer: coarse) { .tint-timeline { height: calc(var(--media-spacing) * 11); } }
 
     .tint-track {
       position: absolute;
-      inset-inline: 0;
-      height: var(--tint-track-rest);
+      inset: 0;
       overflow: hidden;
-      border-radius: calc(var(--tint-track-rest) / 2);
-      background: linear-gradient(to right, var(--tint-accent) var(--media-slider-fill, 0%), oklch(1 0 0 / 0.28) var(--media-slider-fill, 0%));
+      border-radius: var(--tint-radius-group);
+      background: linear-gradient(to right, var(--tint-accent) var(--media-slider-fill, 0%), oklch(1 0 0 / 0.2) var(--media-slider-fill, 0%));
       -webkit-mask-image: var(--tint-cuts, none);
       mask-image: var(--tint-cuts, none);
-      transition:
-        height var(--tint-duration) var(--tint-ease-out),
-        border-radius var(--tint-duration) var(--tint-ease-out);
     }
-    :scope[data-tint-ready] .tint-track { background: oklch(1 0 0 / 0.12); }
+    :scope[data-tint-ready] .tint-track { background: oklch(0.1 0.015 var(--tint-h)); }
+    /* A hairline rim and a little top light, so the strip reads as a tile like the groups beside it. */
+    .tint-timeline::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      border-radius: var(--tint-radius-group);
+      box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1), inset 0 1px 0 oklch(1 0 0 / 0.12);
+      pointer-events: none;
+    }
 
-    .tint-timeline:is([data-pointing], [data-dragging], :focus-within) .tint-track {
-      height: var(--tint-track-open);
-      border-radius: calc(var(--media-spacing) * 1.75);
-    }
-    /* Paused, the timeline opens a little, so stopping shows the film's colours and where you are in them. */
-    :scope[data-tint-ready][data-tint-state='playing']:has(.tint-play[data-paused]) .tint-timeline:not([data-pointing], [data-dragging], :focus-within) .tint-track {
-      height: calc(var(--tint-track-open) * 0.62);
-      border-radius: calc(var(--media-spacing) * 1.25);
-    }
-    :scope[data-tint-ready][data-tint-state='playing']:has(.tint-play[data-paused]) .tint-timeline:not([data-pointing], [data-dragging], :focus-within) .tint-head {
-      height: calc(var(--media-spacing) * 6.5);
-    }
-    @media (hover: none) {
-      .tint-timeline[data-pointing]:not([data-dragging]):not(:focus-within) .tint-track {
-        height: var(--tint-track-rest);
-        border-radius: calc(var(--tint-track-rest) / 2);
-      }
-    }
 
     .tint-track-print {
       position: absolute;
@@ -614,6 +607,8 @@
     }
     .tint-track-lit { clip-path: inset(0 calc(100% - var(--media-slider-fill, 0%)) 0 0); }
     .tint-timeline[data-dragging] .tint-track-lit { clip-path: inset(0 calc(100% - var(--media-slider-pointer, 0%)) 0 0); }
+    /* Ahead of the playhead the film waits in shadow, so watched and unwatched read at a glance. */
+    .tint-track-dim { opacity: 0.62; }
     :scope[data-tint-state='error'] .tint-track-print { filter: grayscale(1); }
 
     .tint-buffer {
@@ -643,28 +638,63 @@
     }
     :where([data-tint-motion='reduce']) .tint-sweep[data-visible] { animation: none; background: oklch(1 0 0 / 0.2); }
 
+    /* The playhead carries the time: a solid tab in the scene's colour, riding the strip. Near the ends it stops at the
+       edge rather than hanging off it. */
     .tint-head {
+      --tint-head-w: 4.7em;
       position: absolute;
       top: 50%;
-      left: var(--media-slider-fill, 0%);
-      width: 3px;
-      height: calc(var(--media-spacing) * 4);
+      left: clamp(calc(var(--tint-head-w) / 2 + 4px), var(--media-slider-fill, 0%), calc(100% - var(--tint-head-w) / 2 - 4px));
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      min-width: var(--tint-head-w);
+      height: calc(var(--tint-strip) - var(--media-spacing) * 2);
+      padding-inline: 0.7em;
       translate: -50% -50%;
-      border-radius: 2px;
-      background: #fff;
-      box-shadow: 0 0 0 1px rgb(0 0 0 / 0.55), 0 0 14px 1px var(--tint-accent);
+      border-radius: var(--tint-radius-button);
+      background: var(--tint-accent);
+      color: var(--tint-on-accent);
+      font-size: calc(var(--media-spacing) * 3.25);
+      font-stretch: 112%;
+      font-weight: 680;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      box-shadow: 0 0 0 1px rgb(0 0 0 / 0.3), 0 6px 18px rgb(0 0 0 / 0.38), 0 0 24px -6px var(--tint-accent);
       outline: none;
       transition:
-        height var(--tint-duration) var(--tint-ease-out),
-        opacity var(--tint-duration) var(--tint-ease-out);
+        opacity var(--tint-duration) var(--tint-ease-out),
+        scale var(--tint-duration-press) ease;
     }
-    .tint-timeline[data-dragging] .tint-head { left: var(--media-slider-pointer, 0%); }
-    .tint-timeline:is([data-pointing], [data-dragging], :focus-within) .tint-head { height: calc(var(--media-spacing) * 8.5); }
+    .tint-timeline[data-dragging] .tint-head {
+      left: clamp(calc(var(--tint-head-w) / 2 + 4px), var(--media-slider-pointer, 0%), calc(100% - var(--tint-head-w) / 2 - 4px));
+      scale: 1.04;
+    }
+    .tint-head-time { pointer-events: none; }
+    .tint-head-time[data-unavailable] { opacity: 0.6; }
     .tint-head:focus-visible {
-      outline: 2px solid var(--tint-accent);
-      outline-offset: 3px;
-      box-shadow: 0 0 0 1px rgb(0 0 0 / 0.55), 0 0 0 7px var(--tint-halo);
+      outline: 2px solid var(--tint-ink);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 1px rgb(0 0 0 / 0.55), 0 0 0 6px var(--tint-halo);
     }
+
+    /* The film's length, quietly at the end of the strip. */
+    .tint-strip-end {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-end: calc(var(--media-spacing) * 3.5);
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      color: oklch(0.975 0.006 var(--tint-h) / 0.86);
+      font-size: calc(var(--media-spacing) * 3.1);
+      font-stretch: 112%;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 0 6px rgb(0 0 0 / 0.9), 0 1px 2px rgb(0 0 0 / 0.8);
+      pointer-events: none;
+    }
+    .tint-timeline:is([data-pointing], [data-dragging]) .tint-strip-end { opacity: 0; }
 
     .tint-preview {
       bottom: calc(100% + var(--media-spacing) * 1.5);
@@ -704,7 +734,7 @@
     .tint-bloom:not([data-open]) { visibility: hidden; }
     :scope[data-tint-bloom] .tint-preview-frame { display: none; }
     :scope[data-tint-bloom] .tint-preview { bottom: calc(100% + var(--tint-bloom-lift, 0px)); }
-    :scope[data-tint-bloom] .tint-timeline:is([data-pointing], [data-dragging], :focus-within) .tint-track { opacity: 0; }
+    /* The bloom draws over the strip (clipped to its corners), so the strip never has to disappear under it. */
     .tint-track { transition: height var(--tint-duration) var(--tint-ease-out), border-radius var(--tint-duration) var(--tint-ease-out), opacity var(--tint-duration-fast) ease; }
     @media (forced-colors: active) { .tint-bloom { display: none; } :scope[data-tint-bloom] .tint-preview-frame { display: block; } }
     .tint-preview-image { display: block; }
@@ -726,15 +756,41 @@
     .tint-row {
       display: flex;
       align-items: center;
-      justify-content: space-between;
       gap: calc(var(--media-spacing) * 2);
-      min-height: var(--tint-control);
+      min-height: var(--tint-strip);
     }
+    /* Two small glass groups, tinted by the scene, playback on one side and the rest on the other. */
     .tint-group {
       display: flex;
+      flex: none;
       align-items: center;
-      gap: calc(var(--media-spacing) * 0.5);
+      gap: 2px;
       min-width: 0;
+      height: var(--tint-strip);
+      padding: var(--media-spacing);
+      border-radius: var(--tint-radius-group);
+      background: oklch(0.2 calc(var(--tint-c, 0) * 0.3) var(--tint-h) / 0.52);
+      box-shadow:
+        inset 0 0 0 1px oklch(1 0 0 / 0.09),
+        inset 0 1px 0 oklch(1 0 0 / 0.1),
+        0 10px 28px rgb(0 0 0 / 0.28);
+      -webkit-backdrop-filter: blur(20px) saturate(1.5);
+      backdrop-filter: blur(20px) saturate(1.5);
+    }
+    @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+      .tint-group { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--tint-surface); }
+    }
+    :where([data-tint-contrast='more']) .tint-group { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--tint-surface); }
+    @media (forced-colors: active) { .tint-group { border: 1px solid CanvasText; } }
+
+    /* Narrow players: the strip gets the full width on top, the two groups sit under it at either side. */
+    @container media-root (width < 36rem) {
+      .tint-bar { --tint-strip: calc(var(--media-spacing) * 9); }
+      .tint-row { flex-wrap: wrap; row-gap: calc(var(--media-spacing) * 2); }
+      .tint-timeline { order: -1; flex-basis: 100%; }
+      .tint-group { height: calc(var(--tint-control) + var(--media-spacing) * 2); }
+      .tint-group-end { margin-inline-start: auto; }
+      .tint-head { --tint-head-w: 4.4em; font-size: calc(var(--media-spacing) * 3); }
     }
 
     .tint-button {

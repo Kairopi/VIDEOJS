@@ -34,24 +34,6 @@
 <media-controls-content class="tint-controls">
 <media-tooltip-group>
 <div class="tint-bar">
-<media-time-slider class="tint-timeline" thumb-alignment="center">
-<media-slider-track class="tint-track" data-tint-fold-target>
-<tint-track class="tint-track-print"></tint-track>
-<media-slider-buffer class="tint-buffer"></media-slider-buffer>
-<media-buffering-indicator class="tint-sweep"></media-buffering-indicator>
-</media-slider-track>
-<tint-bloom class="tint-bloom"></tint-bloom>
-<media-slider-thumb class="tint-head"></media-slider-thumb>
-<media-slider-preview class="tint-preview" overflow="clamp">
-<media-slider-thumbnail class="tint-preview-frame">
-<img alt="" aria-hidden="true" decoding="async" class="tint-preview-image">
-</media-slider-thumbnail>
-<span class="tint-preview-meta">
-<span class="tint-preview-scene" data-tint-pointer-scene></span>
-<media-slider-value class="tint-preview-time" type="pointer"></media-slider-value>
-</span>
-</media-slider-preview>
-</media-time-slider>
 <media-controls-group class="tint-row">
 <media-controls-group class="tint-group tint-group-start">
 <media-play-button class="tint-button tint-play" id="tint-play-trigger">
@@ -80,12 +62,26 @@
 <media-slider-thumb class="tint-volume-thumb"></media-slider-thumb>
 </media-volume-slider>
 </div>
-<media-time-group class="tint-time">
-<media-time class="tint-time-current" type="current"></media-time>
-<media-time-separator class="tint-time-separator"></media-time-separator>
-<media-time class="tint-time-duration" type="duration"></media-time>
-</media-time-group>
 </media-controls-group>
+<media-time-slider class="tint-timeline" thumb-alignment="center">
+<media-slider-track class="tint-track" data-tint-fold-target>
+<tint-track class="tint-track-print"></tint-track>
+<media-slider-buffer class="tint-buffer"></media-slider-buffer>
+<media-buffering-indicator class="tint-sweep"></media-buffering-indicator>
+</media-slider-track>
+<tint-bloom class="tint-bloom"></tint-bloom>
+<span class="tint-strip-end" aria-hidden="true"><media-time class="tint-strip-duration" type="duration"></media-time></span>
+<media-slider-thumb class="tint-head"><media-time class="tint-head-time" type="current" aria-hidden="true"></media-time></media-slider-thumb>
+<media-slider-preview class="tint-preview" overflow="clamp">
+<media-slider-thumbnail class="tint-preview-frame">
+<img alt="" aria-hidden="true" decoding="async" class="tint-preview-image">
+</media-slider-thumbnail>
+<span class="tint-preview-meta">
+<span class="tint-preview-scene" data-tint-pointer-scene></span>
+<media-slider-value class="tint-preview-time" type="pointer"></media-slider-value>
+</span>
+</media-slider-preview>
+</media-time-slider>
 <media-controls-group class="tint-group tint-group-end">
 <media-captions-button class="tint-button tint-captions" id="tint-captions-trigger">
 <media-icon family="tint" name="captions-off" class="tint-icon tint-captions-off-icon"></media-icon>
