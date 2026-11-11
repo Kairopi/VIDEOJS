@@ -21,6 +21,7 @@
 <media-text token="buttons.replay" class="tint-start-label tint-when-ended">Replay</media-text>
 </media-play-button>
 </div>
+<tint-pause class="tint-pause"><media-title class="tint-pause-title"></media-title></tint-pause>
 <media-error-dialog>
 <media-dialog-backdrop class="tint-dialog-backdrop"></media-dialog-backdrop>
 <media-dialog-popup class="tint-dialog">
@@ -275,6 +276,10 @@
 <media-gesture type="doubletap" action="seekStep" value="10" region="right"></media-gesture>
 <media-status-announcer class="tint-visually-hidden"></media-status-announcer>
 <div aria-hidden="true" class="tint-indicators">
+<media-status-indicator actions="togglePaused" class="tint-indicator tint-play-indicator">
+<media-icon family="tint" name="play" class="tint-indicator-icon tint-status-play"></media-icon>
+<media-icon family="tint" name="pause" class="tint-indicator-icon tint-status-pause"></media-icon>
+</media-status-indicator>
 <media-volume-indicator class="tint-indicator tint-volume-indicator">
 <media-volume-indicator-fill class="tint-volume-indicator-fill">
 <media-icon family="tint" name="volume-high" class="tint-indicator-icon tint-level-high"></media-icon>

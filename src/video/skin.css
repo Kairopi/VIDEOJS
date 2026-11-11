@@ -11,6 +11,23 @@
 @property --tint-h { syntax: '<number>'; inherits: true; initial-value: 70; }
 
 @keyframes tint-spin { to { rotate: 360deg; } }
+@keyframes tint-mark-a {
+  0% { opacity: 0; scale: 0.82; animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1); }
+  20% { opacity: 1; scale: 1; animation-timing-function: linear; }
+  52% { opacity: 1; scale: 1.05; animation-timing-function: cubic-bezier(0.4, 0, 0.7, 0.4); }
+  100% { opacity: 0; scale: 1.24; }
+}
+@keyframes tint-mark-b {
+  0% { opacity: 0; scale: 0.82; animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1); }
+  20% { opacity: 1; scale: 1; animation-timing-function: linear; }
+  52% { opacity: 1; scale: 1.05; animation-timing-function: cubic-bezier(0.4, 0, 0.7, 0.4); }
+  100% { opacity: 0; scale: 1.24; }
+}
+@keyframes tint-mark-calm {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 @keyframes tint-sweep { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 
 /* ---------------------------------------------------------------- Tokens */
@@ -626,6 +643,23 @@
     .tint-track-dim { opacity: 0.62; }
     :scope[data-tint-state='error'] .tint-track-print { filter: grayscale(1); }
 
+    /* The seek streak: light runs from where you were to where you landed, brightest at the landing. */
+    .tint-streak {
+      position: absolute;
+      inset-block: 0;
+      z-index: 1;
+      opacity: 0;
+      pointer-events: none;
+      transform-origin: left center;
+      background: linear-gradient(to right, transparent, oklch(1 0 0 / 0.55) 40%, #fff);
+      mix-blend-mode: plus-lighter;
+    }
+    .tint-streak[data-dir='back'] {
+      transform-origin: right center;
+      background: linear-gradient(to left, transparent, oklch(1 0 0 / 0.55) 40%, #fff);
+    }
+    @media (forced-colors: active) { .tint-streak { display: none; } }
+
     /* What has loaded: a faint sheen over the strip, not a second line. */
     .tint-buffer {
       position: absolute;
@@ -1208,6 +1242,122 @@
     .tint-status-indicator[data-status='pip'] .tint-status-pip,
     .tint-status-indicator[data-status='exit-pip'] .tint-status-exit-pip,
     .tint-seek-icon { display: block; }
+
+    /* Play and pause from the picture or a key: a round glass mark in the middle that swells as it fades,
+       so a click on the film is answered where it happened. */
+    .tint-play-indicator {
+      justify-content: center;
+      width: calc(var(--media-spacing) * 15);
+      height: calc(var(--media-spacing) * 15);
+      padding: 0;
+      border-radius: 50%;
+      opacity: 0;
+      transition: none;
+    }
+    /* Its own short life, whatever the indicator's open time: in, swell, gone, in 650 ms. Two names, so a quick
+       pause-then-play restarts it. */
+    .tint-play-indicator[data-open][data-status='pause'] { animation: tint-mark-a 650ms both; }
+    .tint-play-indicator[data-open][data-status='play'] { animation: tint-mark-b 650ms both; }
+    .tint-play-indicator .tint-indicator-icon { width: calc(var(--media-spacing) * 7); height: calc(var(--media-spacing) * 7); }
+    .tint-play-indicator[data-status='play'] .tint-status-play,
+    .tint-play-indicator[data-status='pause'] .tint-status-pause { display: block; }
+    :scope:not([data-tint-state='playing']) .tint-play-indicator { display: none; }
+
+    /* ---------- Pause card ---------- */
+
+    .tint-pause {
+      position: absolute;
+      inset-inline: clamp(18px, 4cqi, 40px);
+      bottom: calc(var(--tint-strip) + clamp(8px, 1.6cqi, 16px) + clamp(14px, 3cqi, 30px));
+      z-index: 8;
+      display: grid;
+      justify-items: start;
+      gap: calc(var(--media-spacing) * 1.5);
+      max-width: min(30rem, 70%);
+      opacity: 0;
+      translate: 0 6px;
+      pointer-events: none;
+      transition:
+        opacity 260ms ease,
+        translate 260ms var(--tint-ease-out);
+    }
+    /* The shade behind it: from the reading corner, so the picture stays clear where the eye isn't reading. */
+    :scope::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 7;
+      opacity: 0;
+      pointer-events: none;
+      border-radius: inherit;
+      background:
+        radial-gradient(120% 90% at 0% 100%, oklch(0.1 0.02 var(--tint-h) / 0.78), oklch(0.1 0.02 var(--tint-h) / 0.3) 45%, transparent 70%);
+      transition: opacity 420ms ease;
+    }
+    :scope:dir(rtl)::before {
+      background: radial-gradient(120% 90% at 100% 100%, oklch(0.1 0.02 var(--tint-h) / 0.78), oklch(0.1 0.02 var(--tint-h) / 0.3) 45%, transparent 70%);
+    }
+    :scope[data-tint-pause][data-tint-state='playing']:not([data-tint-pause-rest]) .tint-pause { opacity: 1; translate: 0 0; }
+    :scope[data-tint-pause][data-tint-state='playing']:not([data-tint-pause-rest])::before { opacity: 1; }
+    /* Out of the way while you look along the strip or use a menu. */
+    :scope:has(.tint-timeline:is([data-pointing], [data-dragging]), .tint-button[aria-expanded='true']) .tint-pause { opacity: 0 !important; }
+    /* Resting: the card and shade lift slowly, leaving the paused frame clean to look at. */
+    :scope[data-tint-pause-rest] .tint-pause,
+    :scope[data-tint-pause-rest]::before { transition-duration: 900ms; }
+
+    .tint-pause-kicker {
+      display: flex;
+      gap: 0.7em;
+      color: var(--tint-ink-2);
+      font-size: clamp(10px, 1.15cqi, 12.5px);
+      font-weight: 650;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .tint-pause-scene { color: var(--tint-accent); }
+    .tint-pause-scene:empty { display: none; }
+    .tint-pause-title {
+      font-size: clamp(20px, 4.2cqi, 46px);
+      font-stretch: 125%;
+      font-weight: 760;
+      line-height: 0.95;
+      letter-spacing: -0.025em;
+      text-wrap: balance;
+    }
+    .tint-pause-foot {
+      display: flex;
+      align-items: center;
+      gap: calc(var(--media-spacing) * 3);
+      color: var(--tint-ink-2);
+      font-size: clamp(12px, 1.35cqi, 14px);
+      font-weight: 560;
+      font-variant-numeric: tabular-nums;
+    }
+    .tint-pause-range:empty { display: none; }
+    /* The scene's colours, from its frames in film order. */
+    .tint-pause-colours { display: flex; gap: 3px; }
+    .tint-pause-colours:empty { display: none; }
+    .tint-pause-colours i {
+      display: block;
+      width: calc(var(--media-spacing) * 4.5);
+      height: calc(var(--media-spacing) * 4.5);
+      border-radius: calc(var(--media-spacing) * 1.25);
+      box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.16);
+    }
+    @container media-root (width < 30rem) {
+      .tint-pause-foot { display: none; }
+    }
+    @container media-root (width < 24rem) {
+      .tint-pause { display: none; }
+      .tint-play-indicator { width: calc(var(--media-spacing) * 11); height: calc(var(--media-spacing) * 11); }
+      .tint-play-indicator .tint-indicator-icon { width: calc(var(--media-spacing) * 5); height: calc(var(--media-spacing) * 5); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .tint-pause, :scope::before { transition: none; }
+      .tint-play-indicator[data-open][data-status] { animation: tint-mark-calm 650ms linear both; }
+    }
+    :where([data-tint-motion='reduce']) .tint-pause { transition: none; }
+    :where([data-tint-motion='reduce']) .tint-play-indicator[data-open][data-status] { animation: tint-mark-calm 650ms linear both; }
     @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
       .tint-indicator { background: var(--tint-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
     }

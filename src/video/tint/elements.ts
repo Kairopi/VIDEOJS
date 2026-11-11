@@ -627,12 +627,63 @@ export class TintTrackElement extends UIElement {
   #pointerTime = 0;
   #disconnect: AbortController | null = null;
   #resize: ResizeObserver | null = null;
+  // The seek streak: a jump (ten seconds back, a click further along) leaves a short trail of light from where you
+  // were to where you landed, so the move is seen, not just the result.
+  #streak = document.createElement('span');
+  #lastTime = -1;
+
+  protected override update(changed: PropertyValues): void {
+    super.update(changed);
+    const time = this.#time.value;
+    if (!time) return;
+    const now = time.currentTime;
+    const before = this.#lastTime;
+    this.#lastTime = now;
+    const duration = time.duration || this.#model?.duration || 0;
+    if (before < 0 || !duration || this.#slider?.hasAttribute('data-dragging')) return;
+    // Playback moves a fraction of a second per update; anything larger is a jump.
+    const jump = now - before;
+    if (Math.abs(jump) < 1.5) return;
+    this.#runStreak(before / duration, now / duration);
+  }
+
+  #runStreak(from: number, to: number): void {
+    if (reducedMotion(this) || !this.isConnected) return;
+    const track = this.parentElement;
+    const width = track?.getBoundingClientRect().width ?? 0;
+    if (!track || !width) return;
+    const forward = to > from;
+    // At least a short comet tail behind the landing point, so a ten-second step on a long film still reads.
+    const tail = Math.max(Math.abs(to - from), Math.min(0.4, 150 / width));
+    const land = clamp(to, 0, 1);
+    const a = (forward ? Math.max(0, land - tail) : land) * 100;
+    const b = (forward ? land : Math.min(1, land + tail)) * 100;
+    if (b - a < 0.2) return;
+    const s = this.#streak;
+    s.style.left = `${a}%`;
+    s.style.width = `${b - a}%`;
+    s.dataset.dir = forward ? 'forward' : 'back';
+    if (!s.isConnected) track.append(s);
+    s.getAnimations().forEach((x) => x.cancel());
+    // Each leg eases on its own: the light runs out quickly, holds a moment at the landing, then fades.
+    s.animate(
+      [
+        { opacity: 0.2, transform: 'scaleX(0)', easing: 'cubic-bezier(0.23, 1, 0.32, 1)' },
+        { opacity: 1, transform: 'scaleX(1)', offset: 0.35, easing: 'linear' },
+        { opacity: 1, transform: 'scaleX(1)', offset: 0.5, easing: 'ease-in' },
+        { opacity: 0, transform: 'scaleX(1)' },
+      ],
+      { duration: 640 }
+    );
+  }
 
   override connectedCallback(): void {
     super.connectedCallback();
     this.setAttribute('aria-hidden', 'true');
     this.#dim.className = 'tint-track-dim';
     this.#lit.className = 'tint-track-lit';
+    this.#streak.className = 'tint-streak';
+    this.#streak.setAttribute('aria-hidden', 'true');
     this.replaceChildren(this.#dim, this.#lit);
 
     const container = containerOf(this);
@@ -1251,8 +1302,137 @@ export class TintScenesElement extends UIElement {
   };
 }
 
+/**
+ * <tint-pause>: what a pause shows. Streaming services use a pause to say where you are (Netflix's title card, Prime
+ * Video's X-Ray); Apple TV dims a little so the controls read, then gets out of the way so you can study the frame.
+ * Tint does both, in its own terms: after a beat, a card with the scene you are in, its time span and its colours,
+ * taken from the fingerprint. After a while untouched, the card and the shade lift and leave the frame clean.
+ * Display only, so it is hidden from assistive tech (the player already announces the pause).
+ */
+export class TintPauseElement extends UIElement {
+  static readonly tagName = 'tint-pause';
+
+  static readonly SHOW_AFTER_MS = 900;
+  static readonly REST_AFTER_MS = 9000;
+
+  #playback = new PlayerController(this, playerContext, selectPlayback);
+  #time = new PlayerController(this, playerContext, selectTime);
+  #model: TintModel | null = null;
+  #container: HTMLElement | null = null;
+  #kicker = document.createElement('p');
+  #scene = document.createElement('span');
+  #colours = document.createElement('span');
+  #range = document.createElement('span');
+  #showTimer = 0;
+  #restTimer = 0;
+  #shownScene = -1;
+  #disconnect: AbortController | null = null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.setAttribute('aria-hidden', 'true');
+    this.#kicker.className = 'tint-pause-kicker';
+    const word = text('tint.paused', 'Paused');
+    this.#scene.className = 'tint-pause-scene';
+    this.#kicker.append(word, this.#scene);
+    const foot = document.createElement('p');
+    foot.className = 'tint-pause-foot';
+    this.#colours.className = 'tint-pause-colours';
+    this.#range.className = 'tint-pause-range';
+    foot.append(this.#colours, this.#range);
+    // The title stays as authored in the template (a <media-title>); the kicker goes above it and the foot below.
+    this.prepend(this.#kicker);
+    this.append(foot);
+
+    this.#container = containerOf(this);
+    if (!this.#container) return;
+    this.#model = getModel(this.#container);
+    this.#disconnect = new AbortController();
+    const { signal } = this.#disconnect;
+    // Any movement over a resting pause brings the card back for another while.
+    this.#container.addEventListener('pointermove', () => this.#wake(), { signal, passive: true });
+    this.#container.addEventListener('keydown', () => this.#wake(), { signal, capture: true });
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#disconnect?.abort();
+    this.#disconnect = null;
+    window.clearTimeout(this.#showTimer);
+    window.clearTimeout(this.#restTimer);
+  }
+
+  protected override update(changed: PropertyValues): void {
+    super.update(changed);
+    const playback = this.#playback.value;
+    const container = this.#container;
+    if (!playback || !container) return;
+    const paused = Boolean(playback.started && playback.paused && !playback.ended);
+    if (!paused) {
+      window.clearTimeout(this.#showTimer);
+      window.clearTimeout(this.#restTimer);
+      this.#showTimer = 0;
+      container.removeAttribute('data-tint-pause');
+      container.removeAttribute('data-tint-pause-rest');
+      this.#shownScene = -1;
+      return;
+    }
+    // A quick pause and resume should not flash a card.
+    if (!container.hasAttribute('data-tint-pause') && !this.#showTimer) {
+      this.#showTimer = window.setTimeout(() => {
+        this.#showTimer = 0;
+        if (!this.#playback.value?.paused) return;
+        this.#fill();
+        container.setAttribute('data-tint-pause', '');
+        this.#wake();
+      }, TintPauseElement.SHOW_AFTER_MS);
+    }
+    // Stepping through a paused film (arrow keys, the 10 s buttons) keeps the card on the scene you are in.
+    if (container.hasAttribute('data-tint-pause')) this.#fill();
+  }
+
+  #wake(): void {
+    const container = this.#container;
+    if (!container?.hasAttribute('data-tint-pause')) return;
+    container.removeAttribute('data-tint-pause-rest');
+    window.clearTimeout(this.#restTimer);
+    this.#restTimer = window.setTimeout(() => container.setAttribute('data-tint-pause-rest', ''), TintPauseElement.REST_AFTER_MS);
+  }
+
+  #fill(): void {
+    const model = this.#model;
+    const now = this.#time.value?.currentTime ?? 0;
+    if (!model || model.status !== 'ready' || !model.scenes.length) {
+      this.#scene.textContent = '';
+      this.#colours.replaceChildren();
+      this.#range.textContent = '';
+      return;
+    }
+    const k = model.sceneAt(now);
+    if (k === this.#shownScene) return;
+    this.#shownScene = k;
+    const scene = model.scenes[k]!;
+    this.#scene.replaceChildren(
+      ...(scene.title ? [document.createTextNode(scene.title)] : [text('tint.scene', 'Scene'), document.createTextNode(` ${k + 1} / ${model.scenes.length}`)])
+    );
+    // The scene's colours: its frames' accents, a few evenly through the scene, in film order.
+    const first = model.frameAt(scene.start);
+    const last = Math.max(first, model.frameAt(Math.max(scene.start, scene.end - 0.01)));
+    const count = Math.min(5, last - first + 1);
+    const swatches: HTMLElement[] = [];
+    for (let i = 0; i < count; i++) {
+      const index = Math.round(first + ((last - first) * i) / Math.max(1, count - 1));
+      const sw = document.createElement('i');
+      sw.style.background = accentCss(model, index);
+      swatches.push(sw);
+    }
+    this.#colours.replaceChildren(...swatches);
+    this.#range.textContent = `${formatTime(scene.start)} – ${formatTime(scene.end)}`;
+  }
+}
+
 export function defineTintElements(): void {
-  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement]) {
+  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement, TintPauseElement]) {
     if (!customElements.get(element.tagName)) customElements.define(element.tagName, element);
   }
 }
