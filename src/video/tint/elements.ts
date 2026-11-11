@@ -60,7 +60,8 @@ function paintFrame(model: TintModel, el: HTMLElement, index: number): void {
   const f = model.frames[index];
   const img = f && model.image(f.url);
   if (!f || !img) return;
-  const width = el.getBoundingClientRect().width || 160;
+  // Layout width, so a menu that is still scaling in doesn't paint its pictures a little small.
+  const width = el.offsetWidth || el.getBoundingClientRect().width || 160;
   const k = width / (f.w || img.naturalWidth);
   el.style.backgroundImage = `url("${f.url}")`;
   el.style.backgroundSize = `${img.naturalWidth * k}px ${img.naturalHeight * k}px`;
@@ -764,13 +765,27 @@ export class TintScenesElement extends UIElement {
     this.#disconnect = new AbortController();
     const { signal } = this.#disconnect;
     this.#model.addEventListener('change', this.#build, { signal });
-    // Thumbnails are painted when the menu opens, once the items have a size.
-    this.closest('media-menu')?.addEventListener('open-change', () => requestAnimationFrame(this.#paintThumbs), { signal });
+    // Thumbnails are painted when the menu opens, once the items have a size. Then each scene lifts off the timeline.
+    const menu = this.closest('media-menu');
+    menu?.addEventListener(
+      'open-change',
+      (event) => {
+        if (event.target !== menu) return;
+        const open = Boolean((event as CustomEvent<{ open?: boolean }>).detail?.open);
+        this.#land();
+        requestAnimationFrame(() => {
+          this.#paintThumbs();
+          if (open) requestAnimationFrame(this.#lift);
+        });
+      },
+      { signal }
+    );
     this.#build();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.#land();
     this.#disconnect?.abort();
     this.#disconnect = null;
     for (const old of this.#items) old.remove();
@@ -833,6 +848,133 @@ export class TintScenesElement extends UIElement {
       const thumb = item.querySelector<HTMLElement>('.tint-scene-thumb');
       if (thumb) paintFrame(model, thumb, Number(thumb.dataset.frame));
     }
+  };
+
+  // ---------- The lift: each scene's stretch of the timeline rises into its row ----------
+
+  #layer: HTMLElement | null = null;
+  #flying: HTMLElement[] = [];
+
+  /** Put the thumbnails back and clear any flight in progress. Safe to call at any time. */
+  #land = (): void => {
+    for (const thumb of this.#flying) thumb.style.removeProperty('visibility');
+    this.#flying = [];
+    if (this.#layer) {
+      for (const a of this.#layer.getAnimations({ subtree: true })) a.cancel();
+      this.#layer.replaceChildren();
+      try {
+        this.#layer.hidePopover();
+      } catch {
+        // Already hidden.
+      }
+    }
+  };
+
+  #lift = (): void => {
+    const model = this.#model;
+    const container = containerOf(this);
+    const menu = this.closest<HTMLElement>('media-menu');
+    const track = container?.querySelector<HTMLElement>('.tint-track');
+    if (!model || model.status !== 'ready' || !container || !menu || !track || !model.duration) return;
+    if (reducedMotion(this) || matchMedia('(forced-colors: active)').matches) return;
+    if (!menu.matches(':popover-open') || !menu.offsetWidth) return;
+    const cr = container.getBoundingClientRect();
+    const tr = track.getBoundingClientRect();
+    if (!tr.width || !cr.width) return;
+
+    // The menu is still growing and scaling in. Read where each thumbnail will come to rest by holding the menu's
+    // transitions at their end for one synchronous measurement, then putting them back.
+    const running = menu.getAnimations({ subtree: true });
+    const held = running.map((a) => a.currentTime);
+    for (const a of running) {
+      const end = a.effect?.getComputedTiming().endTime;
+      if (typeof end === 'number' && Number.isFinite(end)) a.currentTime = end;
+    }
+    const menuBottom = menu.getBoundingClientRect().bottom;
+    const rests = this.#items.map((item) => item.querySelector<HTMLElement>('.tint-scene-thumb')?.getBoundingClientRect() ?? null);
+    running.forEach((a, i) => (a.currentTime = held[i] ?? null));
+    const rest = (r: DOMRect) => ({ left: r.left - cr.left, top: r.top - cr.top, width: r.width, height: r.height, bottom: r.bottom });
+
+    // The flight is drawn in its own top-layer sheet over the menu, clipped to the player.
+    let layer = this.#layer;
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.className = 'tint-lift';
+      layer.setAttribute('popover', 'manual');
+      layer.setAttribute('aria-hidden', 'true');
+      container.append(layer);
+      this.#layer = layer;
+    }
+    Object.assign(layer.style, { left: `${cr.left}px`, top: `${cr.top}px`, width: `${cr.width}px`, height: `${cr.height}px` });
+    try {
+      layer.showPopover();
+    } catch {
+      return;
+    }
+
+    const print = model.print(Math.round(tr.width * dpr()), Math.round(28 * dpr()), LIT);
+    const radius = getComputedStyle(this.#items[0]?.querySelector('.tint-scene-thumb') ?? menu).borderRadius;
+    const DURATION = 460;
+    const STEP = 26;
+    let flown = 0;
+
+    model.scenes.forEach((scene, i) => {
+      const thumb = this.#items[i]?.querySelector<HTMLElement>('.tint-scene-thumb');
+      const at = rests[i];
+      if (!thumb || !at) return;
+      const to = rest(at);
+      // Rows scrolled out of the menu stay where they are.
+      if (!to.width || to.bottom > menuBottom + 1) return;
+      const end = model.scenes[i + 1]?.start ?? model.duration;
+      const from = {
+        left: tr.left - cr.left + (tr.width * scene.start) / model.duration,
+        top: tr.top - cr.top,
+        width: Math.max(2, (tr.width * (end - scene.start)) / model.duration),
+        height: tr.height,
+      };
+
+      const ghost = document.createElement('span');
+      ghost.className = 'tint-lift-ghost';
+      Object.assign(ghost.style, { left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px`, borderRadius: radius });
+      const picture = document.createElement('span');
+      picture.className = 'tint-lift-frame';
+      ghost.append(picture);
+      if (print) {
+        const slice = document.createElement('canvas');
+        slice.className = 'tint-lift-slice';
+        const sx = Math.floor((print.width * scene.start) / model.duration);
+        const sw = Math.max(1, Math.ceil((print.width * (end - scene.start)) / model.duration));
+        slice.width = sw;
+        slice.height = print.height;
+        slice.getContext('2d')!.drawImage(print, sx, 0, sw, print.height, 0, 0, sw, print.height);
+        ghost.append(slice);
+      }
+      layer!.append(ghost);
+      paintFrame(model, picture, scene.face);
+      thumb.style.visibility = 'hidden';
+      this.#flying.push(thumb);
+
+      const delay = flown++ * STEP;
+      const options: KeyframeAnimationOptions = { duration: DURATION, delay, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'backwards' };
+      const motion = ghost.animate(
+        [
+          {
+            transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`,
+            borderRadius: '1px',
+          },
+          { transform: 'none', borderRadius: radius },
+        ],
+        options
+      );
+      ghost.querySelector('.tint-lift-slice')?.animate([{ opacity: 1 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }], options);
+      motion.onfinish = () => {
+        thumb.style.removeProperty('visibility');
+        ghost.remove();
+        this.#flying = this.#flying.filter((t) => t !== thumb);
+        if (!this.#flying.length) this.#land();
+      };
+    });
+    if (!flown) this.#land();
   };
 }
 

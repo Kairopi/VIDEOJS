@@ -667,8 +667,6 @@ function syncChoice(): void {
     if (stops.length > 1) document.documentElement.style.setProperty('--film-swatch', `conic-gradient(${[...stops, stops[0]].join(', ')})`);
     bar.style.setProperty('--bar-chip', accent(model, model.signature()));
     paintLights();
-    glowKey = '';
-    paintGlow();
   }
 }
 
@@ -910,38 +908,7 @@ lights.addEventListener('click', () => {
   });
 });
 
-// ---------------------------------------------------------------- The screen lights the room
 
-const glowCanvases = [...document.querySelectorAll<HTMLCanvasElement>('.player-glow canvas')];
-let glowKey = '';
-let glowFront = 0;
-
-function paintGlow(): void {
-  const model = filmModels[currentIndex()];
-  const m = media();
-  if (!model || model.status !== 'ready' || !m) return;
-  const started = m.currentTime > 0.2 || !m.paused;
-  const index = started ? model.frameAt(m.currentTime) : -1;
-  const key = `${current.id}:${index}`;
-  if (key === glowKey) return;
-  glowKey = key;
-  glowFront = 1 - glowFront;
-  const c = glowCanvases[glowFront]!;
-  c.width = 48;
-  c.height = 27;
-  const g = c.getContext('2d')!;
-  const f = index >= 0 ? model.frames[index] : undefined;
-  const img = f && model.image(f.url);
-  if (f && img) g.drawImage(img, f.x, f.y, f.w, f.h, 0, 0, c.width, c.height);
-  else {
-    // Before the film starts, the room takes the poster's colours: the fingerprint.
-    const print = model.print(c.width, c.height, LIT);
-    if (print) g.drawImage(print, 0, 0, c.width, c.height);
-  }
-  c.dataset.on = '';
-  glowCanvases[1 - glowFront]!.removeAttribute('data-on');
-}
-for (const type of ['timeupdate', 'seeked', 'loadedmetadata', 'emptied', 'play']) player.addEventListener(type, paintGlow, true);
 
 // ---------------------------------------------------------------- The bar marks the section you are reading
 
