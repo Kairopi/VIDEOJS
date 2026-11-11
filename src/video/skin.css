@@ -233,13 +233,12 @@
       overflow: hidden;
       border-radius: inherit;
     }
-    .tint-fold > i {
+    .tint-fold-canvas {
       position: absolute;
-      top: 0;
-      background-repeat: no-repeat;
-      transform-origin: 0 0;
-      will-change: transform;
-      transition: transform var(--tint-duration-fold) var(--tint-ease-fold);
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
     }
 
     /* ---------- Intro: title, length, Play ---------- */
@@ -754,31 +753,6 @@
     .tint-time-separator { font-weight: 400; }
     .tint-time [data-unavailable] { opacity: 0.5; }
 
-    /* The scene chip: the colour you're watching, and where you are. */
-    .tint-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: calc(var(--media-spacing) * 1.5);
-      height: calc(var(--media-spacing) * 6.5);
-      margin-inline-start: calc(var(--media-spacing) * 2);
-      padding-inline: calc(var(--media-spacing) * 2) calc(var(--media-spacing) * 2.75);
-      border-radius: 999px;
-      background: var(--tint-raised);
-      box-shadow: inset 0 0 0 1px var(--tint-hairline);
-      font-size: calc(var(--media-spacing) * 3.1);
-      font-weight: 560;
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-    .tint-chip[hidden] { display: none; }
-    .tint-chip-swatch {
-      width: calc(var(--media-spacing) * 2.25);
-      height: calc(var(--media-spacing) * 2.25);
-      border-radius: 50%;
-      background: var(--tint-accent);
-      box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 0 10px var(--tint-accent);
-    }
-
     /* ---------- Tooltips ---------- */
 
     .tint-tooltip {
@@ -1060,7 +1034,6 @@
     }
 
     @container media-root (width < 34rem) {
-      .tint-chip,
       .tint-pip { display: none; }
       .tint-time-separator,
       .tint-time-duration { display: none; }
@@ -1088,7 +1061,6 @@
       .tint-button { border: 1px solid ButtonText; }
       .tint-start,
       .tint-pill { border: 1px solid ButtonText; }
-      .tint-chip-swatch { background: Highlight; }
     }
   }
 

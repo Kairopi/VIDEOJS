@@ -18,8 +18,7 @@ import { getModel, type TintModel } from './model';
 
 const LIT = 'saturate(1.4) contrast(1.08) brightness(1.06)';
 const DIM = 'saturate(0.6) brightness(0.78)';
-const SLICES = 96;
-const STAGGER_MS = 4;
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
 type TintState = 'poster' | 'folding' | 'playing' | 'unfolding' | 'ended' | 'error';
 
@@ -94,11 +93,11 @@ export class TintPrintElement extends UIElement {
   #canvas = document.createElement('canvas');
   #fold = document.createElement('div');
   #live = document.createElement('p');
-  #printUrl = '';
   #state: TintState | null = null;
   #frame = -2;
   #hue = 70;
   #foldTimer = 0;
+  #foldRaf = 0;
   #disconnect: AbortController | null = null;
   #resize: ResizeObserver | null = null;
 
@@ -134,8 +133,7 @@ export class TintPrintElement extends UIElement {
     this.#resize = null;
     this.#live.remove();
     window.clearTimeout(this.#foldTimer);
-    if (this.#printUrl) URL.revokeObjectURL(this.#printUrl);
-    this.#printUrl = '';
+    cancelAnimationFrame(this.#foldRaf);
   }
 
   protected override update(changed: PropertyValues): void {
@@ -174,7 +172,8 @@ export class TintPrintElement extends UIElement {
     if (prev === 'unfolding' && target === 'ended') return;
 
     window.clearTimeout(this.#foldTimer);
-    const canAnimate = prev !== null && !reducedMotion(this) && this.#model?.status === 'ready' && this.#printUrl;
+    cancelAnimationFrame(this.#foldRaf);
+    const canAnimate = prev !== null && !reducedMotion(this) && this.#model?.status === 'ready';
 
     if (canAnimate && (prev === 'poster' || prev === 'ended') && target === 'playing') {
       this.#runFold('in');
@@ -193,47 +192,193 @@ export class TintPrintElement extends UIElement {
     this.#container?.setAttribute('data-tint-state', state);
   }
 
-  /** The fingerprint pours into the timeline (in), or rises back out of it (out). */
+  /**
+   * The unpacking (in), or the packing back up (out). Every stripe of the poster is one storyboard frame squeezed thin.
+   * On play, each stripe opens back into its frame and the whole film lies out as a contact sheet. Then the frame you
+   * start on grows into the picture while the rest drop into the timeline, each to its own moment. At the end it runs
+   * backwards: the timeline rises into the sheet, and the sheet closes into the poster.
+   *
+   * One 2D canvas over the video; nothing is sampled from the video itself.
+   */
   #runFold(direction: 'in' | 'out'): void {
     const container = this.#container!;
+    const model = this.#model;
     const target = container.querySelector<HTMLElement>('[data-tint-fold-target]');
-    if (!target) {
+    const finish = () => {
+      cancelAnimationFrame(this.#foldRaf);
+      window.clearTimeout(this.#foldTimer);
+      const playback = this.#playback.value;
+      if (direction === 'in') {
+        this.#fold.replaceChildren();
+        this.#setState(playback?.ended ? 'ended' : 'playing');
+      } else {
+        // Let the poster fade in under the last frame before the canvas goes.
+        this.#setState('ended');
+        this.#foldTimer = window.setTimeout(() => this.#fold.replaceChildren(), 200);
+      }
+    };
+    const P = container.getBoundingClientRect();
+    const T = target?.getBoundingClientRect();
+    if (!model || model.status !== 'ready' || !model.frames.length || !T?.width || !P.width) {
+      this.#fold.replaceChildren();
       this.#setState(direction === 'in' ? 'playing' : 'ended');
       return;
     }
-
     this.#setState(direction === 'in' ? 'folding' : 'unfolding');
-    const P = container.getBoundingClientRect();
-    const T = target.getBoundingClientRect();
-    const w = P.width / SLICES;
-    const slices = Array.from({ length: SLICES }, (_, i) => {
-      const s = document.createElement('i');
-      s.style.cssText =
-        `left:${i * w}px;width:${w + 1}px;height:${P.height}px;` +
-        `background-image:url("${this.#printUrl}");background-size:${P.width}px ${P.height}px;` +
-        `background-position:${-i * w}px 0;transition-delay:${i * STAGGER_MS}ms`;
-      return s;
-    });
-    const landed = (i: number) =>
-      `translate(${T.left - P.left + (i * T.width) / SLICES - i * w}px, ${T.top - P.top}px) ` +
-      `scale(${T.width / P.width}, ${T.height / P.height})`;
 
-    if (direction === 'out') slices.forEach((s, i) => (s.style.transform = landed(i)));
-    slices.forEach((s) => (s.style.transitionProperty = 'none'));
-    this.#fold.replaceChildren(...slices);
-    void this.#fold.offsetWidth; // commit the start positions before transitioning
-    slices.forEach((s, i) => {
-      s.style.transitionProperty = '';
-      s.style.transform = direction === 'in' ? landed(i) : 'none';
-    });
+    const W = P.width;
+    const H = P.height;
+    const k = Math.min(2, dpr());
+    const canvas = document.createElement('canvas');
+    canvas.className = 'tint-fold-canvas';
+    canvas.width = Math.round(W * k);
+    canvas.height = Math.round(H * k);
+    const g = canvas.getContext('2d')!;
+    g.scale(k, k);
+    this.#fold.replaceChildren(canvas);
 
-    const duration = parseFloat(getComputedStyle(container).getPropertyValue('--tint-duration-fold')) || 680;
-    this.#foldTimer = window.setTimeout(() => {
-      this.#fold.replaceChildren();
-      const playback = this.#playback.value;
-      if (direction === 'in') this.#setState(playback?.ended ? 'ended' : 'playing');
-      else this.#setState('ended');
-    }, duration + SLICES * STAGGER_MS + 60);
+    const frames = model.frames;
+    const N = frames.length;
+    const print = model.print(canvas.width, canvas.height, LIT);
+    const pw = print ? print.width / N : 0;
+
+    // The contact sheet: as many columns as fit the player's shape, tiles at the storyboard's own shape.
+    // It sits above the timeline, so the tiles have somewhere to fall to.
+    const aspect = frames[0]!.w / frames[0]!.h || 16 / 9;
+    const pad = Math.min(W, H) * 0.05;
+    const area = { x: pad, y: pad, w: W - 2 * pad, h: Math.max(H * 0.4, T.top - P.top - pad * 1.2 - pad) };
+    const cols = Math.max(1, Math.round(Math.sqrt((N * (area.w / area.h)) / aspect)));
+    const rows = Math.ceil(N / cols);
+    const gap = Math.max(1.5, W * 0.0035);
+    const tw = Math.min((area.w - gap * (cols - 1)) / cols, ((area.h - gap * (rows - 1)) / rows) * aspect);
+    const th = tw / aspect;
+    const gx = area.x + (area.w - (cols * tw + (cols - 1) * gap)) / 2;
+    const gy = area.y + (area.h - (rows * th + (rows - 1) * gap)) / 2;
+    const radius = Math.min(6, tw * 0.08);
+
+    // The frame you start on, or end on, grows into the picture. A near-black frame (a studio logo, a fade) would
+    // only grow into a black box, so then every tile goes to the timeline.
+    const time = this.#time.value?.currentTime ?? 0;
+    const heroAt = clamp(direction === 'in' ? model.frameAt(time) : N - 1, 0, N - 1);
+    // OKLab L runs 0 to 1: a night scene sits near 0.2, a black title card under 0.1.
+    const hero = frames[heroAt]!.lab[0] > 0.14 ? heroAt : -1;
+
+    type Box = { x: number; y: number; w: number; h: number };
+    const stripe = (i: number): Box => ({ x: (i * W) / N, y: 0, w: W / N + 0.5, h: H });
+    // A short last row is centred, like a printed sheet, rather than left hanging at one edge.
+    const lastRow = rows - 1;
+    const lastShift = ((cols - (N - lastRow * cols)) * (tw + gap)) / 2;
+    const tile = (i: number): Box => {
+      const r = Math.floor(i / cols);
+      return { x: gx + (i % cols) * (tw + gap) + (r === lastRow ? lastShift : 0), y: gy + r * (th + gap), w: tw, h: th };
+    };
+    const slot = (i: number): Box => ({ x: T.left - P.left + (i * T.width) / N, y: T.top - P.top, w: T.width / N + 0.5, h: T.height });
+    // The hero lands exactly where the video draws its picture (contain), so the hand-off has no jump.
+    const cover = getComputedStyle(container).getPropertyValue('--media-object-fit').trim() === 'cover';
+    const fitW = cover ? Math.max(W, H * aspect) : Math.min(W, H * aspect);
+    const fitH = fitW / aspect;
+    const full: Box = { x: (W - fitW) / 2, y: (H - fitH) / 2, w: fitW, h: fitH };
+    const mix = (a: Box, b: Box, t: number): Box => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, w: a.w + (b.w - a.w) * t, h: a.h + (b.h - a.h) * t });
+
+    // Timing, in ms. Open: stripes become tiles in film order. Hold a beat. Settle: tiles drop to the timeline.
+    const OPEN = 380;
+    const OPEN_SPREAD = 260;
+    const HOLD = 160;
+    const SETTLE = 480;
+    const SETTLE_SPREAD = 420;
+    const settleAt = OPEN + OPEN_SPREAD + HOLD;
+    const TOTAL = settleAt + SETTLE + SETTLE_SPREAD;
+    const outQuart = (t: number) => 1 - (1 - t) ** 4;
+    const inOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+    const step = (t: number, a: number, b: number) => {
+      const x = clamp((t - a) / (b - a), 0, 1);
+      return x * x * (3 - 2 * x);
+    };
+
+    const drawItem = (i: number, box: Box, picture: number, round: number, alpha = 1) => {
+      const f = frames[i]!;
+      const img = model.image(f.url);
+      if (alpha <= 0) return;
+      g.save();
+      g.globalAlpha = alpha;
+      g.beginPath();
+      g.roundRect(box.x, box.y, box.w, box.h, Math.min(round, box.w / 2, box.h / 2));
+      g.clip();
+      // The stripe's colour underneath; the real frame fades up over it.
+      if (print && picture < 1) g.drawImage(print, i * pw, 0, pw, print.height, box.x, box.y, box.w, box.h);
+      if (img && picture > 0) {
+        g.globalAlpha = picture * alpha;
+        g.drawImage(img, f.x, f.y, f.w, f.h, box.x, box.y, box.w, box.h);
+      }
+      g.restore();
+      // A hairline edge while it is a tile, so a black frame (a fade, a logo) still reads as a frame on the sheet.
+      if (picture > 0.05 && box.w > 8) {
+        g.save();
+        g.globalAlpha = picture * alpha;
+        g.strokeStyle = 'rgb(255 255 255 / 0.1)';
+        g.lineWidth = 1;
+        g.beginPath();
+        g.roundRect(box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1, Math.max(0, Math.min(round, box.w / 2, box.h / 2) - 0.5));
+        g.stroke();
+        g.restore();
+      }
+    };
+
+    const draw = (t: number) => {
+      g.clearRect(0, 0, W, H);
+      // The room goes dark for the sheet, and the film shows through as the tiles leave.
+      const dark = 1 - step(t, settleAt + SETTLE * 0.5, TOTAL - 40);
+      if (dark > 0) {
+        g.fillStyle = `rgb(6 6 8 / ${dark})`;
+        g.fillRect(0, 0, W, H);
+      }
+      const order = hero;
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 0; i < N; i++) {
+          if ((pass === 0) === (i === order)) continue; // the hero is drawn last, on top
+          const pos = N > 1 ? i / (N - 1) : 0;
+          const open = outQuart(clamp((t - pos * OPEN_SPREAD) / OPEN, 0, 1));
+          const settle = inOutCubic(clamp((t - settleAt - pos * SETTLE_SPREAD) / SETTLE, 0, 1));
+          const isHero = i === order;
+          const end = isHero ? full : slot(i);
+          let box = mix(stripe(i), tile(i), open);
+          box = mix(box, end, settle);
+          // A little lift as each tile leaves the sheet, so the drop reads as a fall rather than a slide.
+          if (!isHero) box.y -= Math.sin(Math.PI * settle) * th * 0.35;
+          // Each frame stays a picture for most of its fall, and becomes its stripe again as it lands.
+          // The hero stays a picture and dissolves into the playing video instead (a storyboard frame is a few
+          // seconds off the real one, so a cross-fade hides the cut).
+          const picture = isHero ? open : open * (1 - step(settle, 0.6, 1));
+          const alpha = isHero ? 1 - step(settle, 0.5, 0.95) : 1;
+          drawItem(i, box, picture, radius * (1 - settle) + (isHero ? 0 : 1), alpha);
+          if (isHero && open > 0.5 && settle < 0.15) {
+            // The frame you are about to watch is ringed in its own colour.
+            g.save();
+            g.globalAlpha = step(open, 0.5, 1) * (1 - step(settle, 0, 0.15));
+            g.strokeStyle = accentCss(model, i);
+            g.lineWidth = 2;
+            g.beginPath();
+            g.roundRect(box.x - 2.5, box.y - 2.5, box.w + 5, box.h + 5, radius + 2.5);
+            g.stroke();
+            g.restore();
+          }
+        }
+      }
+    };
+
+    const start = performance.now();
+    const frame = (now: number) => {
+      const elapsed = now - start;
+      draw(direction === 'in' ? elapsed : TOTAL - elapsed);
+      if (elapsed < TOTAL) this.#foldRaf = requestAnimationFrame(frame);
+      else finish();
+    };
+    draw(direction === 'in' ? 0 : TOTAL);
+    cancelAnimationFrame(this.#foldRaf);
+    this.#foldRaf = requestAnimationFrame(frame);
+    // A hidden tab pauses animation frames; the player must not wait on it.
+    window.clearTimeout(this.#foldTimer);
+    this.#foldTimer = window.setTimeout(finish, TOTAL + 600);
   }
 
   #setAccent(model: TintModel, frame: number, seeking: boolean): void {
@@ -267,16 +412,6 @@ export class TintPrintElement extends UIElement {
     this.#canvas.width = print.width;
     this.#canvas.height = print.height;
     this.#canvas.getContext('2d')!.drawImage(print, 0, 0);
-    // A blob URL for the fold slices, made now so pressing play never waits on encoding.
-    print.toBlob(
-      (blob) => {
-        if (!blob) return;
-        if (this.#printUrl) URL.revokeObjectURL(this.#printUrl);
-        this.#printUrl = URL.createObjectURL(blob);
-      },
-      'image/jpeg',
-      0.92
-    );
   }
 
   /** `[` and `]` jump between scenes. Typing in a field is left alone. */
@@ -668,53 +803,6 @@ export class TintBloomElement extends UIElement {
   }
 }
 
-/** <tint-scene-chip>: the current scene's colour swatch and number, in the control row. */
-export class TintSceneChipElement extends UIElement {
-  static readonly tagName = 'tint-scene-chip';
-
-  #time = new PlayerController(this, playerContext, selectTime);
-  #model: TintModel | null = null;
-  #label = document.createElement('span');
-  #scene = -1;
-  #disconnect: AbortController | null = null;
-
-  override connectedCallback(): void {
-    super.connectedCallback();
-    const swatch = document.createElement('span');
-    swatch.className = 'tint-chip-swatch';
-    swatch.setAttribute('aria-hidden', 'true');
-    this.#label.className = 'tint-chip-label';
-    this.replaceChildren(swatch, this.#label);
-    const container = containerOf(this);
-    if (!container) return;
-    this.#model = getModel(container);
-    this.#disconnect = new AbortController();
-    this.#model.addEventListener('change', () => ((this.#scene = -1), this.requestUpdate()), { signal: this.#disconnect.signal });
-  }
-
-  override disconnectedCallback(): void {
-    super.disconnectedCallback();
-    this.#disconnect?.abort();
-    this.#disconnect = null;
-  }
-
-  protected override update(changed: PropertyValues): void {
-    super.update(changed);
-    const model = this.#model;
-    const time = this.#time.value;
-    const ready = Boolean(model && model.status === 'ready' && model.scenes.length > 1);
-    this.toggleAttribute('hidden', !ready);
-    if (!ready || !model || !time) return;
-    const scene = model.sceneAt(time.currentTime);
-    if (scene === this.#scene) return;
-    this.#scene = scene;
-    const title = model.scenes[scene]?.title;
-    this.#label.replaceChildren(
-      ...(title ? [document.createTextNode(title)] : [text('tint.scene', 'Scene'), document.createTextNode(` ${scene + 1}`)])
-    );
-  }
-}
-
 /** <tint-scene-count>: "7 scenes", shown on the poster once the fingerprint is read. */
 export class TintSceneCountElement extends UIElement {
   static readonly tagName = 'tint-scene-count';
@@ -979,7 +1067,7 @@ export class TintScenesElement extends UIElement {
 }
 
 export function defineTintElements(): void {
-  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneChipElement, TintSceneCountElement, TintScenesElement]) {
+  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement]) {
     if (!customElements.get(element.tagName)) customElements.define(element.tagName, element);
   }
 }
