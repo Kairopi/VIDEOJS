@@ -15,6 +15,7 @@ import {
 } from '@videojs/html';
 
 import { getModel, type TintModel } from './model';
+import { SlitScanGL } from './slitscan';
 
 const LIT = 'saturate(1.4) contrast(1.08) brightness(1.06)';
 const DIM = 'saturate(0.6) brightness(0.78)';
@@ -88,7 +89,7 @@ type Box = { x: number; y: number; w: number; h: number };
  * The contact sheet: every frame of the film at the storyboard's own shape, in as many columns as fit the area, with a
  * short last row centred like a printed sheet. Shared by the unpacking and the end sheet so both land on the same tiles.
  */
-function sheetGrid(area: Box, n: number, aspect: number, width: number) {
+function sheetGrid(area: Box, n: number, aspect: number, width: number, valign = 0.5) {
   const gap = Math.max(1.5, width * 0.0035);
   // The column count that gives the largest tiles in this area.
   const fit = (c: number) => {
@@ -101,18 +102,19 @@ function sheetGrid(area: Box, n: number, aspect: number, width: number) {
   const tw = Math.max(1, fit(cols));
   const th = tw / aspect;
   const gx = area.x + (area.w - (cols * tw + (cols - 1) * gap)) / 2;
-  const gy = area.y + (area.h - (rows * th + (rows - 1) * gap)) / 2;
+  const height = rows * th + (rows - 1) * gap;
+  const gy = area.y + (area.h - height) * valign;
   const lastRow = rows - 1;
   const lastShift = ((cols - (n - lastRow * cols)) * (tw + gap)) / 2;
   const tile = (i: number): Box => {
     const r = Math.floor(i / cols);
     return { x: gx + (i % cols) * (tw + gap) + (r === lastRow ? lastShift : 0), y: gy + r * (th + gap), w: tw, h: th };
   };
-  return { tile, tw, th, radius: Math.min(6, tw * 0.08) };
+  return { tile, tw, th, height, radius: Math.min(6, tw * 0.08) };
 }
 
 /** One storyboard frame as a tile: the picture, clipped round, with a hairline so a black frame still reads as a frame. */
-function drawTile(g: CanvasRenderingContext2D, model: TintModel, i: number, box: Box, radius: number): void {
+function drawTile(g: CanvasRenderingContext2D, model: TintModel, i: number, box: Box, radius: number, sharpWidth = 0): void {
   const f = model.frames[i];
   const img = f && model.image(f.url);
   if (!f || !img) return;
@@ -121,7 +123,15 @@ function drawTile(g: CanvasRenderingContext2D, model: TintModel, i: number, box:
   g.beginPath();
   g.roundRect(box.x, box.y, box.w, box.h, r);
   g.clip();
-  g.drawImage(img, f.x, f.y, f.w, f.h, box.x, box.y, box.w, box.h);
+  // The sharp picture when it has arrived (cropped to the tile's shape), the storyboard tile until then.
+  const hi = sharpWidth ? model.sharp(i, sharpWidth) : undefined;
+  if (hi) {
+    const a = box.w / box.h;
+    const ia = hi.naturalWidth / hi.naturalHeight;
+    const sw = ia > a ? hi.naturalHeight * a : hi.naturalWidth;
+    const sh = ia > a ? hi.naturalHeight : hi.naturalWidth / a;
+    g.drawImage(hi, (hi.naturalWidth - sw) / 2, (hi.naturalHeight - sh) / 2, sw, sh, box.x, box.y, box.w, box.h);
+  } else g.drawImage(img, f.x, f.y, f.w, f.h, box.x, box.y, box.w, box.h);
   g.restore();
   if (box.w > 8) {
     g.save();
@@ -307,6 +317,7 @@ export class TintPrintElement extends UIElement {
     const endSheet = container.querySelector<TintContactElement>('tint-contact');
     const toSheet = direction === 'out' && Boolean(endSheet?.available());
     const sheetLayout = toSheet || fromSheet;
+    if (toSheet) endSheet!.preload();
     const skip = new AbortController();
     const finish = () => {
       skip.abort();
@@ -1504,7 +1515,8 @@ export class TintPauseElement extends UIElement {
  * you have just passed trailing behind, the way slit-scan photography records time across space. The faster you drag,
  * the longer the trail. Slow down or let go and the slices converge on one frame and dissolve into the real picture.
  *
- * Drawn from the storyboard on one 2D canvas; skipped under reduced motion.
+ * Drawn in WebGL 2 (see slitscan.ts), sharpening as Mux's stills arrive; on a 2D canvas where WebGL 2 is missing.
+ * Skipped under reduced motion.
  */
 export class TintScrubElement extends UIElement {
   static readonly tagName = 'tint-scrub';
@@ -1524,6 +1536,9 @@ export class TintScrubElement extends UIElement {
   #dir = 1;
   #disconnect: AbortController | null = null;
   #watch: MutationObserver | null = null;
+  // The WebGL picture once made (null where it can't be), and the canvas currently on show.
+  #gl: SlitScanGL | null | undefined = undefined;
+  #shown: HTMLCanvasElement = this.#canvas;
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -1535,7 +1550,16 @@ export class TintScrubElement extends UIElement {
     if (!this.#container || !this.#slider) return;
     this.#model = getModel(this.#container);
     this.#disconnect = new AbortController();
+    // A new film needs a new atlas.
+    this.#model.addEventListener('change', () => {
+      this.#gl?.canvas.remove();
+      this.#gl = undefined;
+      this.#shown = this.#canvas;
+      if (!this.#canvas.isConnected) this.append(this.#canvas);
+    }, { signal: this.#disconnect.signal });
     this.#watch = new MutationObserver(() => {
+      // The first time anyone points at the strip, get the sharp frames on their way.
+      if (this.#slider?.hasAttribute('data-pointing') || this.#slider?.hasAttribute('data-dragging')) this.#prepare();
       const dragging = Boolean(this.#slider?.hasAttribute('data-dragging'));
       if (dragging === this.#dragging) return;
       this.#dragging = dragging;
@@ -1545,7 +1569,7 @@ export class TintScrubElement extends UIElement {
         this.#raf = requestAnimationFrame(this.#tick);
       }
     });
-    this.#watch.observe(this.#slider, { attributes: true, attributeFilter: ['data-dragging'] });
+    this.#watch.observe(this.#slider, { attributes: true, attributeFilter: ['data-dragging', 'data-pointing'] });
   }
 
   override disconnectedCallback(): void {
@@ -1554,6 +1578,17 @@ export class TintScrubElement extends UIElement {
     this.#watch?.disconnect();
     cancelAnimationFrame(this.#raf);
     this.#raf = 0;
+  }
+
+  #prepare(): void {
+    const model = this.#model;
+    if (this.#gl !== undefined || !model || model.status !== 'ready' || reducedMotion(this)) return;
+    this.#gl = SlitScanGL.create(model, this.#container?.clientWidth ?? 0);
+    if (!this.#gl) return;
+    this.#gl.canvas.className = 'tint-scrub-canvas';
+    this.#canvas.replaceWith(this.#gl.canvas);
+    this.#shown = this.#gl.canvas;
+    this.#gl.sharpen();
   }
 
   #tick = (now: number): void => {
@@ -1591,7 +1626,7 @@ export class TintScrubElement extends UIElement {
   };
 
   #hide(): void {
-    this.#canvas.style.opacity = '0';
+    this.#shown.style.opacity = '0';
     this.#container?.removeAttribute('data-tint-scrubbing');
   }
 
@@ -1600,6 +1635,21 @@ export class TintScrubElement extends UIElement {
     const W = container.clientWidth;
     const H = container.clientHeight;
     if (!W || !H) return;
+    this.#prepare();
+    // A lost WebGL context falls back to the 2D canvas for good.
+    if (this.#gl?.lost) {
+      this.#gl.canvas.replaceWith(this.#canvas);
+      this.#gl = null;
+      this.#shown = this.#canvas;
+    }
+    if (this.#gl) {
+      const f0 = model.frames[0]!;
+      const box = pictureBox(container, W, H, f0.w / f0.h || 16 / 9);
+      this.#gl.draw(W, H, Math.min(2, dpr()), box, this.#u * D, this.#len, this.#dir >= 0 ? 1 : -1);
+      this.#gl.canvas.style.opacity = alpha.toFixed(3);
+      container.setAttribute('data-tint-scrubbing', '');
+      return;
+    }
     // Storyboard frames are small: a lower-resolution canvas costs nothing in sharpness.
     const k = Math.min(1.5, dpr());
     if (this.#canvas.width !== Math.round(W * k) || this.#canvas.height !== Math.round(H * k)) {
@@ -1719,6 +1769,7 @@ export class TintContactElement extends UIElement {
     this.#disconnect = new AbortController();
     const { signal } = this.#disconnect;
     this.#model.addEventListener('change', () => ((this.#hover = -1), this.#scenes.replaceChildren(), this.#sync()), { signal });
+    this.#model.addEventListener('sharp', this.#onSharp, { signal });
     this.#canvas.addEventListener('pointermove', this.#onMove, { signal });
     this.#canvas.addEventListener('pointerleave', () => this.#setHover(-1), { signal });
     this.#canvas.addEventListener('click', this.#onPick, { signal });
@@ -1745,6 +1796,20 @@ export class TintContactElement extends UIElement {
     const c = this.#container;
     return Boolean(this.#model?.status === 'ready' && this.#model.frames.length > 1 && c && c.clientWidth >= 300 && c.clientHeight >= 190);
   }
+
+  /** Start fetching sharp tiles, so the sheet is crisp by the time the frames land in it. */
+  preload(): void {
+    const model = this.#model;
+    const grid = this.#grid();
+    if (!model || !grid) return;
+    model.frames.forEach((_, i) => model.sharp(i, grid.tw * dpr()));
+  }
+
+  #redraw = 0;
+  #onSharp = (): void => {
+    if (!this.#shown || this.#redraw) return;
+    this.#redraw = requestAnimationFrame(() => ((this.#redraw = 0), this.render()));
+  };
 
   /** Where the tiles go, in the player's coordinates: between the title and the buttons. */
   area(): Box | null {
@@ -1817,9 +1882,10 @@ export class TintContactElement extends UIElement {
     g.fillStyle = 'rgb(6 6 8)';
     g.fillRect(0, 0, W, H);
     const scene = this.#hover >= 0 ? model.sceneAt(model.frames[this.#hover]!.start) : -1;
+    const sharpWidth = grid.tw * k;
     model.frames.forEach((f, i) => {
       g.globalAlpha = scene < 0 || model.sceneAt(f.start) === scene ? 1 : 0.38;
-      drawTile(g, model, i, grid.tile(i), grid.radius);
+      drawTile(g, model, i, grid.tile(i), grid.radius, sharpWidth);
     });
     g.globalAlpha = 1;
     if (this.#hover >= 0) {
@@ -1924,15 +1990,25 @@ export class TintContactElement extends UIElement {
     void Promise.resolve(time.seek(f.start)).finally(() => void playback.play());
   }
 
-  /** A 3:4 print of the sheet: kicker, title, every frame, the fingerprint, and the facts underneath. */
+  /** A print of the sheet, about 3:4: kicker, title, every frame, the fingerprint, and the facts underneath. */
   async #savePoster(): Promise<void> {
     const model = this.#model;
     const container = this.#container;
     if (!model || model.status !== 'ready' || !container) return;
     await document.fonts?.ready;
     const W = 1800;
-    const H = 2400;
     const m = 120;
+    const f0 = model.frames[0]!;
+    const aspect = f0.w / f0.h || 16 / 9;
+    // Black frames (a fade, a logo on black) are left out of the print; everything else is there, credits included,
+    // as in Cinema Redux.
+    const shown = model.frames.map((_, i) => i).filter((i) => model.frames[i]!.lab[0] > 0.12 || model.frames[i]!.chroma > 0.02);
+    // The columns are chosen for a page about 3:4; the page then takes the sheet's own height, so nothing floats.
+    const top = 420;
+    const grid = sheetGrid({ x: m, y: top, w: W - 2 * m, h: W * 1.3 - top - 340 }, shown.length, aspect, W * 1.4, 0);
+    const bandH = 96;
+    const bandY = top + grid.height + 72;
+    const H = Math.round(bandY + bandH + 72 + 40 + m);
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = H;
@@ -1971,12 +2047,11 @@ export class TintContactElement extends UIElement {
     g.fontStretch = 'normal';
 
     // The sheet, then the fingerprint under it: the same film twice, as pictures and as colour.
-    const bandH = 96;
-    const bandY = H - m - 110 - bandH;
-    const area = { x: m, y: y + 70, w: W - 2 * m, h: bandY - 70 - (y + 70) };
-    const f0 = model.frames[0]!;
-    const grid = sheetGrid(area, model.frames.length, f0.w / f0.h || 16 / 9, W * 1.6);
-    model.frames.forEach((_, i) => drawTile(g, model, i, grid.tile(i), grid.radius * 1.4));
+    const sharpWidth = grid.tw;
+    this.#save.setAttribute('aria-busy', 'true');
+    await model.sharpAll(shown, sharpWidth, 5000);
+    this.#save.removeAttribute('aria-busy');
+    shown.forEach((i, k) => drawTile(g, model, i, grid.tile(k), grid.radius * 1.4, sharpWidth));
     const print = model.print(W - 2 * m, bandH, LIT);
     if (print) {
       g.save();
@@ -1992,8 +2067,10 @@ export class TintContactElement extends UIElement {
     g.textAlign = 'right';
     g.fillText(formatTime(model.duration), W - m, bandY + bandH + 40);
     g.textAlign = 'left';
+    g.fillStyle = 'rgb(246 244 240 / 0.14)';
+    g.fillRect(m, H - m - 50, W - 2 * m, 1);
 
-    const line = [facts, model.scenes.length > 1 ? `${model.scenes.length} scenes` : '', `${model.frames.length} frames`].filter(Boolean).join('  ·  ');
+    const line = [facts, model.scenes.length > 1 ? `${model.scenes.length} scenes` : '', `${shown.length} frames`].filter(Boolean).join('  ·  ');
     g.font = `560 30px ${font}`;
     g.fillStyle = ink;
     g.fillText(line, m, H - m);

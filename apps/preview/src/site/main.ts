@@ -344,6 +344,8 @@ function render(): void {
   const quiet = calm();
   const copyFade = 1 - smooth(0.02, 0.13, p);
   copy.style.opacity = String(copyFade);
+  // Once the words have faded, their Watch button can't be pressed or tabbed to by accident.
+  copy.inert = copyFade < 0.05;
   copy.style.translate = quiet ? '' : `0 ${-p * 260}px`;
   titles.style.opacity = String(1 - smooth(0.03, 0.1, p));
   const cap = smooth(0.32, 0.41, p) * (1 - smooth(0.55, 0.62, p));
@@ -645,6 +647,12 @@ for (const a of document.querySelectorAll<HTMLAnchorElement>('a[href="#watch"]')
     goToPlayer();
   });
 }
+// The hero's Watch: the whole title sequence in one press, landing on the film playing with sound.
+$('.hero-watch').addEventListener('click', (e) => {
+  watchFrom(0);
+  // From the keyboard (a click with no pointer), focus follows into the player so the next key works the controls.
+  if (e.detail === 0) window.setTimeout(() => player.querySelector<HTMLElement>('.tint-play')?.focus({ preventScroll: true }), 1900);
+});
 $('.skip').addEventListener('click', (e) => {
   e.preventDefault();
   goToPlayer(true);
@@ -679,7 +687,10 @@ function syncChoice(): void {
   for (const p of pickEls) p.button.setAttribute('aria-pressed', String(p.film === current));
   $('.credit-title').textContent = current.title;
   $('.credit-year').textContent = String(current.year);
+  $('.hero-watch-title').textContent = current.title;
   const model = filmModels[currentIndex()];
+  // Whole seconds down, as the player's own clock shows it.
+  $('.hero-watch-time').textContent = model?.duration ? formatTime(Math.floor(model.duration)) : '';
   if (model?.status === 'ready') {
     const stops = model.scenes.map((s) => accent(model, s.face));
     if (stops.length > 1) document.documentElement.style.setProperty('--film-swatch', `conic-gradient(${[...stops, stops[0]].join(', ')})`);

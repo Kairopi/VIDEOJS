@@ -418,6 +418,31 @@ html.lenis { scroll-snap-type: none; }
   letter-spacing: -0.01em;
   text-wrap: balance;
 }
+.hero-watch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  margin-top: clamp(20px, 2.6vw, 34px);
+  padding: 0 22px 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #0b0b0d;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 640;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 10px 40px rgb(0 0 0 / 0.35);
+  transition: scale 90ms ease, background-color 140ms ease;
+}
+.hero-watch svg { width: 20px; height: 20px; fill: currentColor; }
+.hero-watch:active { scale: 0.97; }
+@media (hover: hover) { .hero-watch:hover { background: var(--bar-chip, #fff); } }
+.hero-watch:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+.hero-watch-time { color: rgb(11 11 13 / 0.55); font-weight: 520; font-variant-numeric: tabular-nums; }
+.hero-watch-time:empty { display: none; }
 .sv-caption { position: absolute; left: var(--pad); right: var(--pad); bottom: clamp(32px, 7vh, 80px); opacity: 0; }
 .sv-caption h2 {
   margin: 0;

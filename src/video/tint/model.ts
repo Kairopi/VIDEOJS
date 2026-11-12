@@ -61,6 +61,7 @@ export class TintModel extends EventTarget {
   #key = '';
   #chapters: MediaTextCue[] = [];
   #prints = new Map<string, HTMLCanvasElement>();
+  #sharp = new Map<string, HTMLImageElement>();
 
   /** Load a thumbnails track. Calling again with the same track does nothing. */
   async setTrack(track: MediaThumbnailsTrack | null): Promise<void> {
@@ -68,6 +69,7 @@ export class TintModel extends EventTarget {
     if (key === this.#key) return;
     this.#key = key;
     this.#prints.clear();
+    this.#sharp.clear();
 
     if (!track || !key) {
       this.#set('unavailable', [], 0);
@@ -166,6 +168,41 @@ export class TintModel extends EventTarget {
 
   image(url: string): HTMLImageElement | undefined {
     return this.#images.get(url);
+  }
+
+  /**
+   * A sharp picture of a frame, from Mux's image API, for anything shown larger than a storyboard tile. Asking starts
+   * the download; until it arrives this returns nothing and callers draw the storyboard tile. Each arrival fires a
+   * `sharp` event, so a view can redraw. Nothing for sources without an image API.
+   */
+  sharp(index: number, width: number): HTMLImageElement | undefined {
+    const f = this.frames[index];
+    const url = f && this.stillUrl(f.start, width);
+    if (!url) return undefined;
+    let img = this.#sharp.get(url);
+    if (!img) {
+      img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.decoding = 'async';
+      img.addEventListener('load', () => this.dispatchEvent(new CustomEvent('sharp', { detail: index })), { once: true });
+      img.src = url;
+      this.#sharp.set(url, img);
+    }
+    return img.complete && img.naturalWidth ? img : undefined;
+  }
+
+  /** Wait for sharp pictures of these frames, or the timeout, whichever comes first. */
+  async sharpAll(indices: number[], width: number, timeoutMs: number): Promise<void> {
+    const waits = indices.map((i) => {
+      if (this.sharp(i, width)) return Promise.resolve();
+      const f = this.frames[i];
+      const img = f && this.#sharp.get(this.stillUrl(f.start, width) ?? '');
+      return img ? new Promise<void>((resolve) => {
+        img.addEventListener('load', () => resolve(), { once: true });
+        img.addEventListener('error', () => resolve(), { once: true });
+      }) : Promise.resolve();
+    });
+    await Promise.race([Promise.all(waits), new Promise((r) => setTimeout(r, timeoutMs))]);
   }
 
   /**

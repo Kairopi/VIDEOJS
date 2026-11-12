@@ -23,6 +23,10 @@
   52% { opacity: 1; scale: 1.05; animation-timing-function: cubic-bezier(0.4, 0, 0.7, 0.4); }
   100% { opacity: 0; scale: 1.24; }
 }
+@keyframes tint-stripe-rise {
+  from { scale: 1 0.12; }
+  to { scale: 1 1; }
+}
 @keyframes tint-mark-calm {
   0%, 60% { opacity: 1; }
   100% { opacity: 0; }
@@ -653,6 +657,9 @@
       transform-origin: left center;
       background: linear-gradient(to right, transparent, oklch(1 0 0 / 0.55) 40%, #fff);
       mix-blend-mode: plus-lighter;
+      /* Light through slits: the jump reads as stripes of the film lighting up, in the strip's own language. */
+      -webkit-mask: repeating-linear-gradient(to right, #000 0 2px, transparent 2px 3px);
+      mask: repeating-linear-gradient(to right, #000 0 2px, transparent 2px 3px);
     }
     .tint-streak[data-dir='back'] {
       transform-origin: right center;
@@ -1258,7 +1265,26 @@
        pause-then-play restarts it. */
     .tint-play-indicator[data-open][data-status='pause'] { animation: tint-mark-a 650ms both; }
     .tint-play-indicator[data-open][data-status='play'] { animation: tint-mark-b 650ms both; }
-    .tint-play-indicator .tint-indicator-icon { width: calc(var(--media-spacing) * 7); height: calc(var(--media-spacing) * 7); }
+    /* No disc: the mark is the icon itself in the scene's colour. Pause is two stripes rising out of nothing, like the
+       strip's frames; play is the triangle. A soft shadow keeps it readable on any picture. */
+    .tint-play-indicator {
+      background: none;
+      box-shadow: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .tint-play-indicator .tint-indicator-icon {
+      width: calc(var(--media-spacing) * 13);
+      height: calc(var(--media-spacing) * 13);
+      color: var(--tint-accent);
+      filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.45)) drop-shadow(0 6px 22px rgb(0 0 0 / 0.5));
+    }
+    .tint-play-indicator[data-open] .tint-status-pause rect {
+      transform-box: fill-box;
+      transform-origin: 50% 100%;
+      animation: tint-stripe-rise 300ms cubic-bezier(0.23, 1, 0.32, 1) both;
+    }
+    .tint-play-indicator[data-open] .tint-status-pause rect:nth-child(2) { animation-delay: 45ms; }
     .tint-play-indicator[data-status='play'] .tint-status-play,
     .tint-play-indicator[data-status='pause'] .tint-status-pause { display: block; }
     :scope:not([data-tint-state='playing']) .tint-play-indicator { display: none; }
@@ -1350,14 +1376,16 @@
     @container media-root (width < 24rem) {
       .tint-pause { display: none; }
       .tint-play-indicator { width: calc(var(--media-spacing) * 11); height: calc(var(--media-spacing) * 11); }
-      .tint-play-indicator .tint-indicator-icon { width: calc(var(--media-spacing) * 5); height: calc(var(--media-spacing) * 5); }
+      .tint-play-indicator .tint-indicator-icon { width: calc(var(--media-spacing) * 9); height: calc(var(--media-spacing) * 9); }
     }
     @media (prefers-reduced-motion: reduce) {
       .tint-pause, :scope::before { transition: none; }
       .tint-play-indicator[data-open][data-status] { animation: tint-mark-calm 650ms linear both; }
+      .tint-play-indicator[data-open] .tint-status-pause rect { animation: none; }
     }
     :where([data-tint-motion='reduce']) .tint-pause { transition: none; }
     :where([data-tint-motion='reduce']) .tint-play-indicator[data-open][data-status] { animation: tint-mark-calm 650ms linear both; }
+    :where([data-tint-motion='reduce']) .tint-play-indicator[data-open] .tint-status-pause rect { animation: none; }
     @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
       .tint-indicator { background: var(--tint-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
     }
