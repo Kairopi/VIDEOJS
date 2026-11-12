@@ -17,6 +17,9 @@
   --chrome: 190px;
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
   --font: 'Mona Sans', ui-sans-serif, system-ui, sans-serif;
+  /* Titles: a light, narrow serif, like the titles on a film's own cards. The player takes it too. */
+  --display: 'Instrument Serif', ui-serif, Georgia, serif;
+  --tint-font-display: var(--display);
 }
 
 :root[data-theme='light'] {
@@ -111,8 +114,14 @@ main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline:
   color: var(--ink);
 }
 .bar a { text-decoration: none; }
-.bar-mark { display: inline-flex; align-items: center; gap: 9px; font-size: 17px; font-stretch: 125%; font-weight: 820; letter-spacing: -0.02em; }
-.bar-chip { width: 14px; height: 14px; border-radius: 50%; background: var(--bar-chip, currentColor); transition: background 600ms ease; }
+.bar-mark { display: inline-flex; align-items: center; gap: 10px; font-family: var(--display); font-size: 27px; font-style: italic; font-weight: 400; line-height: 1; letter-spacing: -0.01em; }
+/* The mark: a tiny reel of the film that's on, turning while it plays. */
+.bar-reel { width: 22px; height: 22px; border-radius: 50%; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.12); }
+@keyframes bar-turn { to { rotate: 1turn; } }
+:root[data-room='down'] .bar-reel { animation: bar-turn 10s linear infinite; }
+@media (prefers-reduced-motion: reduce) { :root[data-room='down'] .bar-reel { animation: none; } }
+/* The poster shows the title, year and length; the film's line waits for the pause card. */
+.tint-intro .tint-logline { display: none; }
 .bar-links { display: flex; gap: clamp(14px, 2.2vw, 30px); margin-left: auto; font-size: 14px; font-weight: 520; }
 /* The house lights, small, at the end of the bar. */
 .bar .lights { --lights-w: 58px; --lights-h: 30px; --lights-pad: 3px; }
@@ -538,11 +547,11 @@ html { transition: background-color 1.2s ease; }
 }
 .access h2 {
   margin: 0;
-  font-size: clamp(34px, 4.8vw, 68px);
-  font-stretch: 115%;
-  font-weight: 780;
-  line-height: 0.98;
-  letter-spacing: -0.035em;
+  font-family: var(--display);
+  font-size: clamp(42px, 5.8vw, 84px);
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: -0.015em;
 }
 .access p { max-width: 44ch; margin: 0; color: var(--ink-2); font-size: clamp(18px, 1.6vw, 22px); line-height: 1.4; text-wrap: pretty; }
 .access-open {
@@ -577,11 +586,11 @@ html { transition: background-color 1.2s ease; }
 .section-head h2 {
   max-width: 16ch;
   margin: 0;
-  font-size: clamp(34px, 4.8vw, 68px);
-  font-stretch: 115%;
-  font-weight: 780;
-  line-height: 0.98;
-  letter-spacing: -0.035em;
+  font-family: var(--display);
+  font-size: clamp(42px, 5.8vw, 84px);
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: -0.015em;
   text-wrap: balance;
 }
 .section-head p { max-width: 46ch; margin: 0; color: var(--ink-2); font-size: 18px; text-wrap: pretty; }

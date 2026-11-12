@@ -18,8 +18,9 @@
 </p>
 <p class="tint-logline"></p>
 <media-play-button class="tint-start">
+<span class="tint-start-disc"><tint-reel kind="start"></tint-reel>
 <media-icon family="tint" name="play" class="tint-start-icon tint-when-fresh"></media-icon>
-<media-icon family="tint" name="restart" class="tint-start-icon tint-when-ended"></media-icon>
+<media-icon family="tint" name="restart" class="tint-start-icon tint-when-ended"></media-icon></span>
 <media-text token="buttons.play" class="tint-start-label tint-when-fresh">Play</media-text>
 <media-text token="buttons.replay" class="tint-start-label tint-when-ended">Replay</media-text>
 </media-play-button>
@@ -47,14 +48,14 @@
 <media-tooltip-group>
 <!-- The transport, in the middle of the picture: ten seconds back, play and pause, ten seconds on. -->
 <tint-transport class="tint-transport">
-<media-seek-button seconds="-10" class="tint-button tint-seek tint-seek-back" id="tint-back-trigger">
+<media-seek-button seconds="-10" class="tint-button tint-seek tint-seek-back" id="tint-back-trigger"><tint-reel kind="back"></tint-reel>
 <media-icon family="tint" name="seek-back" class="tint-icon"></media-icon>
 </media-seek-button>
 <media-tooltip trigger="tint-back-trigger" side="top" class="media-popup tint-tooltip">
 <media-tooltip-label></media-tooltip-label>
 <media-tooltip-shortcut class="tint-tooltip-key"></media-tooltip-shortcut>
 </media-tooltip>
-<media-play-button class="tint-button tint-play" id="tint-play-trigger">
+<media-play-button class="tint-button tint-play" id="tint-play-trigger"><tint-reel kind="play"></tint-reel>
 <media-icon family="tint" name="playpause" class="tint-icon tint-morph-icon"></media-icon>
 <media-icon family="tint" name="play" class="tint-icon tint-play-icon"></media-icon>
 <media-icon family="tint" name="pause" class="tint-icon tint-pause-icon"></media-icon>
@@ -64,7 +65,7 @@
 <media-tooltip-label></media-tooltip-label>
 <media-tooltip-shortcut class="tint-tooltip-key"></media-tooltip-shortcut>
 </media-tooltip>
-<media-seek-button seconds="10" class="tint-button tint-seek tint-seek-forward" id="tint-forward-trigger">
+<media-seek-button seconds="10" class="tint-button tint-seek tint-seek-forward" id="tint-forward-trigger"><tint-reel kind="forward"></tint-reel>
 <media-icon family="tint" name="seek-forward" class="tint-icon"></media-icon>
 </media-seek-button>
 <media-tooltip trigger="tint-forward-trigger" side="top" class="media-popup tint-tooltip">
@@ -102,7 +103,7 @@
 <media-buffering-indicator class="tint-sweep"></media-buffering-indicator>
 </media-slider-track>
 <tint-bloom class="tint-bloom"></tint-bloom>
-<media-slider-thumb class="tint-head"><media-time class="tint-head-time" type="current" aria-hidden="true"></media-time></media-slider-thumb>
+<media-slider-thumb class="tint-head"><media-time class="tint-head-time" type="current" aria-hidden="true"></media-time><span class="tint-head-roll" aria-hidden="true"></span></media-slider-thumb>
 <media-slider-preview class="tint-preview" overflow="clamp">
 <media-slider-thumbnail class="tint-preview-frame">
 <img alt="" aria-hidden="true" decoding="async" class="tint-preview-image">

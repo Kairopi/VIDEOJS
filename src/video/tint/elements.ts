@@ -14,7 +14,9 @@ import {
   type PropertyValues,
 } from '@videojs/html';
 
+import { Jelly, polarPrint } from './jelly';
 import { getModel, type TintModel } from './model';
+import { Roller } from './roll';
 import { SlitScanGL } from './slitscan';
 
 const LIT = 'saturate(1.4) contrast(1.08) brightness(1.06)';
@@ -187,6 +189,7 @@ export class TintPrintElement extends UIElement {
   #mark = document.createElement('span');
   #markTime = document.createElement('span');
   #riffle = -1;
+  #markRoll: Roller | null = null;
   #state: TintState | null = null;
   #frame = -2;
   #hue = 70;
@@ -617,7 +620,10 @@ export class TintPrintElement extends UIElement {
     if (!n || this.#artIndex < 0) return;
     this.#mark.style.setProperty('--at', `${((this.#artIndex + 0.5) / n) * 100}%`);
     const f = this.#model!.frames[this.#artIndex]!;
-    this.#markTime.textContent = formatTime(f.start);
+    // Riffling rolls the time along with the frames.
+    this.#markRoll ??= new Roller(this.#markTime);
+    const text = formatTime(f.start);
+    this.#markRoll.set(text, text >= this.#markRoll.text);
   }
 
   #resting(): boolean {
@@ -713,6 +719,18 @@ export class TintTrackElement extends UIElement {
   #streak = document.createElement('span');
   #lastTime = -1;
 
+  /** The playhead's time, on rolling drums. While you drag it shows where you will land. */
+  #roll(now: number, forward: boolean): void {
+    const el = this.#slider?.querySelector<HTMLElement>('.tint-head-roll');
+    if (!el) return;
+    if (!this.#roller || this.#roller.el !== el) this.#roller = new Roller(el);
+    const dragging = Boolean(this.#slider?.hasAttribute('data-dragging'));
+    el.toggleAttribute('data-fast', dragging);
+    this.#roller.set(formatTime(dragging ? this.#pointerTime : now), forward);
+  }
+
+  #roller: Roller | null = null;
+
   protected override update(changed: PropertyValues): void {
     super.update(changed);
     const time = this.#time.value;
@@ -720,6 +738,7 @@ export class TintTrackElement extends UIElement {
     const now = time.currentTime;
     const before = this.#lastTime;
     this.#lastTime = now;
+    this.#roll(now, now >= before);
     const duration = time.duration || this.#model?.duration || 0;
     if (before < 0 || !duration || this.#slider?.hasAttribute('data-dragging')) return;
     // Only on the playing film: the unpacking and the end sheet have their own motion.
@@ -835,7 +854,9 @@ export class TintTrackElement extends UIElement {
     const rect = this.getBoundingClientRect();
     const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     const t = fraction * (this.#time.value?.duration || model.duration);
+    const forward = t >= this.#pointerTime;
     this.#pointerTime = t;
+    if (slider.hasAttribute('data-dragging')) this.#roll(this.#time.value?.currentTime ?? 0, forward);
     const frame = model.frameAt(t);
     slider.style.setProperty('--tint-pointer-color', accentCss(model, frame));
     const scene = model.sceneAt(t);
@@ -2089,228 +2110,33 @@ export class TintContactElement extends UIElement {
 }
 
 /**
- * <tint-transport>: the middle of the picture. Ten seconds back, play and pause, ten seconds on, and the reel.
+ * <tint-transport>: the middle of the picture. Ten seconds back, play and pause, ten seconds on.
  *
- * The play button sits in a disc of the film's own colours: the fingerprint wrapped into a circle, each frame a wedge
- * with the top of its picture at the rim, the way Cinemetrics draws a film as a wheel. The part you have watched is
- * lit. While the film plays the disc turns like a reel; pause and it runs down and stops; jump back or on and it whips
- * that way and settles. The three buttons lean toward the pointer, and the disc tilts under it and catches the light.
- * Pressing ten seconds turns its arrow right round and shows the step beside it, adding up as you keep pressing.
- *
- * Still under reduced motion: no turning, leaning or tilting. In quiet mode the disc is left out.
+ * The buttons themselves are jelly (see <tint-reel>). This element adds what the ten-second buttons say when pressed:
+ * the arrow turns right round, and the step rolls up beside the button, adding up while you keep pressing.
  */
 export class TintTransportElement extends UIElement {
   static readonly tagName = 'tint-transport';
-  /** Degrees a second while the film plays: one turn in ten seconds. */
-  static readonly SPIN = 36;
-  /** The hub's radius as a share of the disc's. */
-  static readonly HUB = 0.5;
 
-  #playback = new PlayerController(this, playerContext, selectPlayback);
-  #time = new PlayerController(this, playerContext, selectTime);
-  #model: TintModel | null = null;
-  #container: HTMLElement | null = null;
-  #play: HTMLElement | null = null;
-  #buttons: HTMLElement[] = [];
-  #reel = document.createElement('span');
-  #disc = document.createElement('span');
-  #dim = document.createElement('canvas');
-  #lit = document.createElement('canvas');
-  #drawn = '';
-  #angle = 0;
-  #speed = 0;
-  #kick = 0;
-  #raf = 0;
-  #last = 0;
-  #lastTime = -1;
-  #pointer: { x: number; y: number } | null = null;
-  #lean = new Map<HTMLElement, { x: number; y: number; rx: number; ry: number }>();
-  #chips = new Map<HTMLElement, { el: HTMLElement; total: number; timer: number }>();
+  #chips = new Map<HTMLElement, { roller: Roller; el: HTMLElement; total: number; timer: number }>();
   #disconnect: AbortController | null = null;
-  #resize: ResizeObserver | null = null;
-  #watch: MutationObserver | null = null;
 
   override connectedCallback(): void {
     super.connectedCallback();
-    this.#container = containerOf(this);
-    this.#play = this.querySelector<HTMLElement>('.tint-play');
-    this.#buttons = [...this.querySelectorAll<HTMLElement>(':scope > .tint-button')];
-    if (!this.#container || !this.#play) return;
-    this.#model = getModel(this.#container);
-
-    this.#reel.className = 'tint-reel';
-    this.#reel.setAttribute('aria-hidden', 'true');
-    this.#disc.className = 'tint-reel-disc';
-    this.#dim.className = 'tint-reel-dim';
-    this.#lit.className = 'tint-reel-lit';
-    this.#disc.replaceChildren(this.#dim, this.#lit);
-    const hub = document.createElement('span');
-    hub.className = 'tint-reel-hub';
-    const glare = document.createElement('span');
-    glare.className = 'tint-reel-glare';
-    this.#reel.replaceChildren(this.#disc, hub, glare);
-    if (this.#reel.parentElement !== this.#play) this.#play.prepend(this.#reel);
-
     this.#disconnect = new AbortController();
     const { signal } = this.#disconnect;
-    this.#model.addEventListener('change', () => ((this.#drawn = ''), this.#draw()), { signal });
-    this.#resize = new ResizeObserver(() => this.#draw());
-    this.#resize.observe(this.#play);
-    // Leaning follows a mouse or pen, never a finger.
-    this.#container.addEventListener(
-      'pointermove',
-      (e) => {
-        if (e.pointerType === 'touch') return;
-        this.#pointer = { x: e.clientX, y: e.clientY };
-        this.#run();
-      },
-      { signal, passive: true }
-    );
-    this.#container.addEventListener('pointerleave', () => ((this.#pointer = null), this.#run()), { signal });
-    for (const button of this.#buttons) {
-      if (!button.classList.contains('tint-seek')) continue;
+    for (const button of this.querySelectorAll<HTMLElement>(':scope > .tint-seek')) {
       button.addEventListener('click', () => this.#stepped(button), { signal });
     }
-    // The transport shows and hides with the controls: only move while it can be seen.
-    const controls = this.closest('.tint-controls');
-    if (controls) {
-      this.#watch = new MutationObserver(() => this.#run());
-      this.#watch.observe(controls, { attributes: true, attributeFilter: ['data-visible'] });
-    }
-    this.#draw();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.#disconnect?.abort();
     this.#disconnect = null;
-    this.#resize?.disconnect();
-    this.#resize = null;
-    this.#watch?.disconnect();
-    this.#watch = null;
-    cancelAnimationFrame(this.#raf);
-    this.#raf = 0;
     for (const chip of this.#chips.values()) window.clearTimeout(chip.timer);
   }
 
-  protected override update(changed: PropertyValues): void {
-    super.update(changed);
-    const time = this.#time.value;
-    const duration = time?.duration || this.#model?.duration || 0;
-    if (time && duration) {
-      this.#disc.style.setProperty('--tint-reel-at', `${clamp(time.currentTime / duration, 0, 1) * 360}deg`);
-      const before = this.#lastTime;
-      this.#lastTime = time.currentTime;
-      const jump = time.currentTime - before;
-      // A jump whips the reel that way; playing on moves it a fraction of a second at a time.
-      if (before >= 0 && Math.abs(jump) > 1.5 && !this.#still() && this.#visible()) {
-        // About half a turn per jump, a full turn at most however fast you press.
-        this.#kick = clamp(this.#kick + Math.sign(jump) * 760, -1500, 1500);
-        this.#run();
-      }
-    }
-    this.#run();
-  }
-
-  #still(): boolean {
-    return reducedMotion(this) || quiet(this);
-  }
-
-  #visible(): boolean {
-    const controls = this.closest('.tint-controls');
-    return Boolean(controls?.hasAttribute('data-visible') || this.matches(':focus-within'));
-  }
-
-  #run(): void {
-    if (this.#raf || !this.isConnected) return;
-    this.#last = performance.now();
-    this.#raf = requestAnimationFrame(this.#frame);
-  }
-
-  #frame = (now: number): void => {
-    this.#raf = 0;
-    const dt = Math.min(0.05, Math.max(0, (now - this.#last) / 1000));
-    this.#last = now;
-    const playback = this.#playback.value;
-    const playing = Boolean(playback?.started && !playback.paused && !playback.ended);
-    const still = this.#still();
-    let moving = false;
-
-    // The reel: spins up quickly, runs down slowly, like something with weight.
-    const target = playing && !still ? TintTransportElement.SPIN : 0;
-    if (still) this.#speed = 0;
-    const tau = Math.abs(target) > Math.abs(this.#speed) ? 0.45 : 1.1;
-    this.#speed += (target - this.#speed) * (1 - Math.exp(-dt / tau));
-    if (Math.abs(this.#speed) < 0.3 && !target) this.#speed = 0;
-    // A jump's whip dies away fast on top of the steady turn: angle gained = kick × 0.22 s.
-    const kicked = this.#kick;
-    this.#kick *= Math.exp(-dt / 0.22);
-    if (Math.abs(this.#kick) < 2 || still) this.#kick = 0;
-    const turn = this.#speed * dt + (kicked - this.#kick) * 0.22;
-    if (turn) {
-      this.#angle = (((this.#angle + turn) % 360) + 360) % 360;
-      this.#disc.style.rotate = `${this.#angle.toFixed(2)}deg`;
-      moving = true;
-    }
-
-    // Leaning: each button drifts toward the pointer as it comes near, and the play disc tilts under it.
-    const ease = 1 - Math.exp(-dt / 0.12);
-    for (const button of this.#buttons) {
-      const lean = this.#lean.get(button) ?? { x: 0, y: 0, rx: 0, ry: 0 };
-      let tx = 0;
-      let ty = 0;
-      let trx = 0;
-      let try_ = 0;
-      const p = this.#pointer;
-      if (p && !still && this.#visible()) {
-        const r = button.getBoundingClientRect();
-        const cx = r.left + r.width / 2 - lean.x;
-        const cy = r.top + r.height / 2 - lean.y;
-        const dx = p.x - cx;
-        const dy = p.y - cy;
-        const reach = Math.max(r.width * 1.5, 90);
-        const d = Math.hypot(dx, dy);
-        if (d < reach) {
-          const f = 1 - (d / reach) ** 2;
-          tx = dx * 0.32 * f;
-          ty = dy * 0.32 * f;
-          if (button === this.#play) {
-            trx = (-dy / reach) * 18 * f;
-            try_ = (dx / reach) * 18 * f;
-            this.#reel.style.setProperty('--tint-glare-x', `${50 + (dx / r.width) * 60}%`);
-            this.#reel.style.setProperty('--tint-glare-y', `${50 + (dy / r.height) * 60}%`);
-            this.#reel.style.setProperty('--tint-glare', String(f.toFixed(3)));
-          }
-        }
-      }
-      if (button === this.#play && !(tx || ty)) this.#reel.style.setProperty('--tint-glare', '0');
-      const next = {
-        x: lean.x + (tx - lean.x) * ease,
-        y: lean.y + (ty - lean.y) * ease,
-        rx: lean.rx + (trx - lean.rx) * ease,
-        ry: lean.ry + (try_ - lean.ry) * ease,
-      };
-      const settled = Math.abs(next.x - tx) < 0.05 && Math.abs(next.y - ty) < 0.05 && Math.abs(next.rx - trx) < 0.05 && Math.abs(next.ry - try_) < 0.05;
-      if (settled) Object.assign(next, { x: tx, y: ty, rx: trx, ry: try_ });
-      else moving = true;
-      this.#lean.set(button, next);
-      button.style.translate = next.x || next.y ? `${next.x.toFixed(2)}px ${next.y.toFixed(2)}px` : '';
-      if (button === this.#play) {
-        button.style.transform = next.rx || next.ry ? `perspective(340px) rotateX(${next.rx.toFixed(2)}deg) rotateY(${next.ry.toFixed(2)}deg)` : '';
-      }
-    }
-
-    // Keep going while something moves and can be seen. Out of sight it settles at once, so it never comes back
-    // still carrying a whip or a run-down from before.
-    if (!this.#visible()) {
-      this.#speed = target;
-      this.#kick = 0;
-      return;
-    }
-    if (moving || target || this.#kick) this.#raf = requestAnimationFrame(this.#frame);
-  };
-
-  /** Ten seconds: the arrow turns right round, and the step shows beside the button, adding up while you press. */
   #stepped(button: HTMLElement): void {
     const back = button.classList.contains('tint-seek-back');
     if (!reducedMotion(this)) {
@@ -2324,82 +2150,325 @@ export class TintTransportElement extends UIElement {
       const el = document.createElement('span');
       el.className = 'tint-seek-chip';
       el.setAttribute('aria-hidden', 'true');
+      const sign = document.createElement('span');
+      sign.className = 'tint-seek-sign';
+      sign.textContent = back ? '\u2212' : '+';
+      const num = document.createElement('span');
+      el.append(sign, num);
       button.append(el);
-      chip = { el, total: 0, timer: 0 };
+      chip = { roller: new Roller(num), el, total: 0, timer: 0 };
       this.#chips.set(button, chip);
     }
     const seconds = Math.abs(Number(button.getAttribute('seconds')) || 10);
+    const first = !chip.total;
     chip.total += seconds;
-    chip.el.textContent = `${back ? '\u2212' : '+'}${chip.total}`;
+    // Two digits from the start, so 10 rolling to 20 turns one drum, not a new shape.
+    chip.roller.set(String(chip.total).padStart(2, '0'), !first);
     chip.el.dataset.on = '';
-    if (!reducedMotion(this)) {
-      chip.el.animate([{ scale: '0.7', opacity: 0.4 }, { scale: '1.08', opacity: 1, offset: 0.6 }, { scale: '1', opacity: 1 }], { duration: 220, easing: 'ease-out' });
-    }
     window.clearTimeout(chip.timer);
     const c = chip;
     chip.timer = window.setTimeout(() => {
       delete c.el.dataset.on;
       c.total = 0;
-    }, 800);
+    }, 900);
+  }
+}
+
+/**
+ * <tint-reel>: makes the button it sits in a soft disc of the film.
+ *
+ *   kind="play"    the transport's play button: the fingerprint wrapped into a ring round a hub in the scene's colour,
+ *                  lit as far as you have watched, turning like a reel while the film plays and running down on pause;
+ *   kind="start"   the poster's play button: the same ring, all of it lit, turning slowly while it waits;
+ *   kind="back"    ten seconds back: a lens on the frame ten seconds ago;
+ *   kind="forward" ten seconds on: a lens on the frame ten seconds ahead.
+ *
+ * Every one is jelly (jelly.ts): it swells toward the pointer, squashes when pressed, stretches when pulled and wobbles
+ * home; a jump in time shoves it the way you went. Still under reduced motion. Left out in quiet mode, with forced
+ * colours, and until the film's colours are in, so the button keeps its plain look.
+ */
+export class TintReelElement extends UIElement {
+  static readonly tagName = 'tint-reel';
+  /** Degrees a second while the film plays: one turn in ten seconds. */
+  static readonly SPIN = 36;
+  /** Degrees a second while the poster waits. */
+  static readonly IDLE = 7;
+  static readonly HUB = 0.5;
+
+  #playback = new PlayerController(this, playerContext, selectPlayback);
+  #time = new PlayerController(this, playerContext, selectTime);
+  #model: TintModel | null = null;
+  #container: HTMLElement | null = null;
+  #host: HTMLElement | null = null;
+  #jelly: Jelly | null = null;
+  #tex = document.createElement('canvas');
+  #rings: { key: string; dim: HTMLCanvasElement; lit: HTMLCanvasElement } | null = null;
+  #composed = '';
+  #angle = 0;
+  #speed = 0;
+  #kick = 0;
+  #raf = 0;
+  #last = 0;
+  #lastTime = -1;
+  #disconnect: AbortController | null = null;
+  #resize: ResizeObserver | null = null;
+
+  get kind(): 'play' | 'start' | 'back' | 'forward' {
+    const k = this.getAttribute('kind');
+    return k === 'start' || k === 'back' || k === 'forward' ? k : 'play';
   }
 
-  /** The disc: each frame's slit wrapped round the hub, the top of the picture at the rim. */
-  #draw = (): void => {
-    const model = this.#model;
-    const play = this.#play;
-    if (!model || !play) return;
-    if (model.status !== 'ready') {
-      this.#reel.removeAttribute('data-ready');
-      this.#drawn = '';
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.setAttribute('aria-hidden', 'true');
+    this.classList.add('tint-reel');
+    this.#container = containerOf(this);
+    this.#host = this.parentElement;
+    if (!this.#container || !this.#host) return;
+    this.#model = getModel(this.#container);
+    this.#disconnect = new AbortController();
+    const { signal } = this.#disconnect;
+    this.#jelly = new Jelly(this.#host, signal, () => this.#run(), this.kind === 'start' ? { stretch: 1.25, swell: 0.16 } : {});
+    this.replaceChildren(this.#jelly.canvas);
+    this.#model.addEventListener('change', () => ((this.#rings = null), (this.#composed = ''), this.#sync()), { signal });
+    this.#model.addEventListener('sharp', () => ((this.#composed = ''), this.#sync()), { signal });
+    this.#resize = new ResizeObserver(() => ((this.#composed = ''), this.#sync()));
+    this.#resize.observe(this.#host);
+    // The pointer from anywhere on the player: the disc swells toward it as it comes near. Never a finger.
+    this.#container.addEventListener(
+      'pointermove',
+      (e) => {
+        if (e.pointerType === 'touch') return;
+        this.#jelly?.hover(e.clientX, e.clientY);
+        this.#run();
+      },
+      { signal, passive: true }
+    );
+    this.#container.addEventListener('pointerleave', () => (this.#jelly?.hover(null), this.#run()), { signal });
+    this.#host.addEventListener('click', () => {
+      if (this.kind === 'back') this.#jelly?.shove(-0.45);
+      else if (this.kind === 'forward') this.#jelly?.shove(0.45);
+      else this.#jelly?.poke(0.8);
+    }, { signal });
+    // The transport shows and hides with the controls, the poster with the state.
+    const watch = new MutationObserver(() => this.#run());
+    watch.observe(this.#container, { attributes: true, attributeFilter: ['data-tint-state', 'data-tint'], subtree: false });
+    const controls = this.closest('.tint-controls');
+    if (controls) watch.observe(controls, { attributes: true, attributeFilter: ['data-visible'] });
+    signal.addEventListener('abort', () => watch.disconnect());
+    this.#sync();
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#disconnect?.abort();
+    this.#disconnect = null;
+    this.#resize?.disconnect();
+    this.#resize = null;
+    cancelAnimationFrame(this.#raf);
+    this.#raf = 0;
+  }
+
+  protected override update(changed: PropertyValues): void {
+    super.update(changed);
+    const time = this.#time.value;
+    if (time) {
+      const before = this.#lastTime;
+      this.#lastTime = time.currentTime;
+      const jump = time.currentTime - before;
+      // A jump whips a reel round that way and shoves the disc after it.
+      if (before >= 0 && Math.abs(jump) > 1.5 && this.#visible() && !this.#jelly?.still) {
+        if (this.kind === 'play') this.#kick = clamp(this.#kick + Math.sign(jump) * 760, -1500, 1500);
+        this.#jelly?.shove(Math.sign(jump) * 0.3);
+      }
+    }
+    this.#sync();
+  }
+
+  #off(): boolean {
+    const c = this.#container;
+    return !c || quiet(c) || matchMedia('(forced-colors: active)').matches || this.#model?.status !== 'ready';
+  }
+
+  #visible(): boolean {
+    const host = this.#host;
+    if (!host?.isConnected) return false;
+    const check = (host as HTMLElement & { checkVisibility?: (o: object) => boolean }).checkVisibility;
+    return check ? check.call(host, { opacityProperty: true, visibilityProperty: true }) : true;
+  }
+
+  /** Bring the texture up to date with the film, the time and the colour, and start moving if there is reason to. */
+  #sync(): void {
+    const jelly = this.#jelly;
+    const host = this.#host;
+    if (!jelly || !host) return;
+    if (this.#off()) {
+      this.removeAttribute('data-ready');
+      host.removeAttribute('data-tint-jelly');
       return;
     }
-    const size = Math.round(play.offsetWidth * dpr());
-    const key = `${size}|${model.frames.length}`;
-    if (!size || key === this.#drawn) return;
-    const W = 720;
-    const H = 48;
-    const R = size / 2;
-    const r0 = R * TintTransportElement.HUB;
-    for (const [canvas, filter] of [
-      [this.#dim, REEL_DIM],
-      [this.#lit, LIT],
-    ] as const) {
-      const print = model.print(W, H, filter);
-      if (!print) return;
-      let src: Uint8ClampedArray;
-      try {
-        src = print.getContext('2d')!.getImageData(0, 0, W, H).data;
-      } catch {
-        return;
-      }
-      canvas.width = size;
-      canvas.height = size;
-      const g = canvas.getContext('2d')!;
-      const out = g.createImageData(size, size);
-      const o = out.data;
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          const dx = x + 0.5 - R;
-          const dy = y + 0.5 - R;
-          const r = Math.hypot(dx, dy);
-          if (r > R + 1 || r < r0 - 1) continue;
-          let a = Math.atan2(dx, -dy);
-          if (a < 0) a += Math.PI * 2;
-          const sx = Math.min(W - 1, Math.floor((a / (Math.PI * 2)) * W));
-          const sy = Math.min(H - 1, Math.max(0, Math.floor((1 - clamp((r - r0) / (R - r0), 0, 1)) * (H - 1))));
-          const s = (sy * W + sx) * 4;
-          const d = (y * size + x) * 4;
-          o[d] = src[s]!;
-          o[d + 1] = src[s + 1]!;
-          o[d + 2] = src[s + 2]!;
-          // Soft edges at the rim and the hub, so the ring is round at any size.
-          o[d + 3] = Math.round(255 * clamp(R - r + 0.5, 0, 1) * clamp(r - r0 + 0.5, 0, 1));
-        }
-      }
-      g.putImageData(out, 0, 0);
+    jelly.still = reducedMotion(this);
+    const R = jelly.fit();
+    if (!R) return;
+    if (this.#compose(R)) {
+      jelly.texture = this.#tex;
+      this.setAttribute('data-ready', '');
+      host.setAttribute('data-tint-jelly', '');
     }
-    this.#drawn = key;
-    this.#reel.setAttribute('data-ready', '');
+    this.#run();
+  }
+
+  /** Paint the disc's picture. Returns false until there is one. */
+  #compose(R: number): boolean {
+    const model = this.#model!;
+    const k = Math.min(2, window.devicePixelRatio || 1);
+    const size = Math.max(8, Math.round(R * 2 * k));
+    const time = this.#time.value;
+    const duration = time?.duration || model.duration || 0;
+    const now = time?.currentTime ?? 0;
+    const accent = getComputedStyle(this.#container!).getPropertyValue('--tint-accent').trim() || '#e8c25a';
+    const kind = this.kind;
+
+    if (kind === 'back' || kind === 'forward') {
+      const at = clamp(now + (kind === 'back' ? -10 : 10), 0, Math.max(0, duration - 0.5));
+      const index = model.frameAt(at);
+      const sharp = model.sharp(index, Math.round(R * 4 * k));
+      const key = `${kind}|${size}|${index}|${sharp ? 1 : 0}`;
+      if (key === this.#composed) return true;
+      const f = model.frames[index];
+      const img = sharp ?? (f ? model.image(f.url) : undefined);
+      if (!f || !img) return false;
+      const t = this.#prepare(size);
+      const sw = sharp ? sharp.naturalWidth : f.w;
+      const sh = sharp ? sharp.naturalHeight : f.h;
+      const sx = sharp ? 0 : f.x;
+      const sy = sharp ? 0 : f.y;
+      // Cover: the middle of the frame, square.
+      const s = Math.min(sw, sh);
+      t.drawImage(img, sx + (sw - s) / 2, sy + (sh - s) / 2, s, s, 0, 0, size, size);
+      // Dimmed, so the arrow reads on any frame.
+      t.fillStyle = 'rgb(0 0 0 / 0.38)';
+      t.fillRect(0, 0, size, size);
+      this.#composed = key;
+      return true;
+    }
+
+    const rings = this.#ringsAt(model, size);
+    if (!rings) return false;
+    const lit = kind === 'start' ? 1 : duration ? clamp(now / duration, 0, 1) : 0;
+    const key = `${kind}|${size}|${Math.round(lit * 900)}|${accent}`;
+    if (key === this.#composed) return true;
+    const t = this.#prepare(size);
+    const c = size / 2;
+    t.drawImage(rings.dim, 0, 0);
+    if (lit > 0) {
+      t.save();
+      t.beginPath();
+      t.moveTo(c, c);
+      t.arc(c, c, c + 1, -Math.PI / 2, -Math.PI / 2 + lit * Math.PI * 2);
+      t.closePath();
+      t.clip();
+      t.drawImage(rings.lit, 0, 0);
+      t.restore();
+    }
+    // Where you are: a fine bright tick across the ring.
+    if (kind === 'play') {
+      const a = -Math.PI / 2 + lit * Math.PI * 2;
+      t.strokeStyle = 'rgb(255 255 255 / 0.95)';
+      t.lineWidth = Math.max(1, 1.4 * k);
+      t.beginPath();
+      t.moveTo(c + Math.cos(a) * c * TintReelElement.HUB, c + Math.sin(a) * c * TintReelElement.HUB);
+      t.lineTo(c + Math.cos(a) * c, c + Math.sin(a) * c);
+      t.stroke();
+    }
+    // The hub, in the scene's colour, slightly domed, with a groove where it meets the film.
+    const hub = c * TintReelElement.HUB;
+    t.beginPath();
+    t.arc(c, c, hub, 0, Math.PI * 2);
+    t.fillStyle = accent;
+    t.fill();
+    const dome = t.createRadialGradient(c - hub * 0.35, c - hub * 0.45, 0, c, c, hub);
+    dome.addColorStop(0, 'rgb(255 255 255 / 0.18)');
+    dome.addColorStop(0.6, 'rgb(255 255 255 / 0)');
+    dome.addColorStop(1, 'rgb(0 0 0 / 0.16)');
+    t.fillStyle = dome;
+    t.fill();
+    t.lineWidth = Math.max(1, 1.5 * k);
+    t.strokeStyle = 'rgb(0 0 0 / 0.45)';
+    t.stroke();
+    this.#composed = key;
+    return true;
+  }
+
+  #prepare(size: number): CanvasRenderingContext2D {
+    if (this.#tex.width !== size) {
+      this.#tex.width = size;
+      this.#tex.height = size;
+    }
+    const t = this.#tex.getContext('2d')!;
+    t.setTransform(1, 0, 0, 1, 0, 0);
+    t.clearRect(0, 0, size, size);
+    // A fresh picture: the jelly redraws even if nothing else moved.
+    this.#jelly?.invalidate();
+    return t;
+  }
+
+  #ringsAt(model: TintModel, size: number): { dim: HTMLCanvasElement; lit: HTMLCanvasElement } | null {
+    const key = `${size}|${model.frames.length}|${model.duration}`;
+    if (this.#rings?.key === key) return this.#rings;
+    const dimPrint = model.print(720, 48, REEL_DIM);
+    const litPrint = model.print(720, 48, LIT);
+    if (!dimPrint || !litPrint) return null;
+    const dim = polarPrint(dimPrint, size, TintReelElement.HUB);
+    const lit = polarPrint(litPrint, size, TintReelElement.HUB);
+    if (!dim || !lit) return null;
+    this.#rings = { key, dim, lit };
+    return this.#rings;
+  }
+
+  #run(): void {
+    if (this.#raf || !this.isConnected || !this.hasAttribute('data-ready')) return;
+    this.#last = performance.now();
+    this.#raf = requestAnimationFrame(this.#frame);
+  }
+
+  #frame = (now: number): void => {
+    this.#raf = 0;
+    const jelly = this.#jelly;
+    if (!jelly || !this.hasAttribute('data-ready')) return;
+    const dt = Math.min(0.05, Math.max(0, (now - this.#last) / 1000));
+    this.#last = now;
+    const visible = this.#visible();
+    const playback = this.#playback.value;
+    const playing = Boolean(playback?.started && !playback.paused && !playback.ended);
+    const still = jelly.still;
+    const kind = this.kind;
+
+    // The reel: spins up quickly, runs down slowly, like something with weight. The poster's turns slowly, waiting.
+    const target = still ? 0 : kind === 'play' && playing ? TintReelElement.SPIN : kind === 'start' ? TintReelElement.IDLE : 0;
+    if (still) this.#speed = 0;
+    const tau = Math.abs(target) > Math.abs(this.#speed) ? 0.45 : 1.1;
+    this.#speed += (target - this.#speed) * (1 - Math.exp(-dt / tau));
+    if (Math.abs(this.#speed) < 0.3 && !target) this.#speed = 0;
+    const kicked = this.#kick;
+    this.#kick *= Math.exp(-dt / 0.22);
+    if (Math.abs(this.#kick) < 2 || still) this.#kick = 0;
+    this.#angle = (((this.#angle + this.#speed * dt + (kicked - this.#kick) * 0.22) % 360) + 360) % 360;
+    jelly.rotation = (this.#angle * Math.PI) / 180;
+
+    if (!visible) {
+      // Out of sight it settles at once, so it never comes back carrying a whip from before.
+      this.#speed = target;
+      this.#kick = 0;
+      return;
+    }
+    const moving = jelly.step(dt);
+    jelly.draw();
+    const [x, y] = jelly.offset;
+    // The icon rides on the body.
+    this.#host!.style.setProperty('--tint-jx', `${x.toFixed(2)}px`);
+    this.#host!.style.setProperty('--tint-jy', `${y.toFixed(2)}px`);
+    if (moving || target || this.#kick) this.#raf = requestAnimationFrame(this.#frame);
   };
 }
 
@@ -2593,7 +2662,7 @@ function light(r: number, g: number, b: number): string {
 }
 
 export function defineTintElements(): void {
-  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement, TintPauseElement, TintScrubElement, TintContactElement, TintTransportElement, TintLineElement, TintAmbientElement]) {
+  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement, TintPauseElement, TintScrubElement, TintContactElement, TintTransportElement, TintReelElement, TintLineElement, TintAmbientElement]) {
     if (!customElements.get(element.tagName)) customElements.define(element.tagName, element);
   }
 }

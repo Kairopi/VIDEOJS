@@ -4,6 +4,7 @@ import '@videojs/html/media/mux-video';
 import '@/video/skin';
 import skinTemplate from '@/video/skin.html?raw';
 import { tintTranslations } from '@/video/tint/i18n';
+import { polarPrint } from '@/video/tint/jelly';
 import { TintModel } from '@/video/tint/model';
 import { registerI18n } from '@videojs/html/i18n';
 import type { MediaTextCue } from '@videojs/html';
@@ -110,14 +111,10 @@ function fillTitleCard(film: Film): void {
     const el = player.querySelector<HTMLElement>(selector);
     if (el) fill(el);
   };
-  set('.tint-kicker', (el) => (el.textContent = 'Blender Studio · Open Movie'));
-  set('.tint-meta-facts', (el) => {
-    const badge = document.createElement('span');
-    badge.className = 'tint-badge';
-    badge.textContent = 'CC BY';
-    badge.title = 'Creative Commons Attribution 4.0';
-    el.replaceChildren(badge, `${film.year} · ${film.genre}`);
-  });
+  // Just the title, the year and the length on the poster; the credit and licence are in the line under the player.
+  // The logline is still given, for the pause card, but the poster doesn't show it (site.css).
+  set('.tint-kicker', (el) => (el.textContent = ''));
+  set('.tint-meta-facts', (el) => el.replaceChildren(String(film.year)));
   set('.tint-logline', (el) => (el.textContent = film.logline));
 }
 fillTitleCard(current);
@@ -233,8 +230,29 @@ function syncChoice(): void {
     if (stops.length > 1) document.documentElement.style.setProperty('--film-swatch', `conic-gradient(${[...stops, stops[0]].join(', ')})`);
     document.documentElement.style.setProperty('--film-accent', accent(model, model.signature()));
     bar.style.setProperty('--bar-chip', accent(model, model.signature()));
+    paintMark(model);
     paintLights();
   }
+}
+
+/** The logo is the film that's on: its fingerprint as a tiny reel round a hub in its own colour. */
+function paintMark(model: TintModel): void {
+  const canvas = document.querySelector<HTMLCanvasElement>('.bar-reel');
+  const print = model.print(360, 24, 'saturate(1.4) contrast(1.08) brightness(1.06)');
+  if (!canvas || !print) return;
+  const ring = polarPrint(print, canvas.width, 0.4);
+  if (!ring) return;
+  const g = canvas.getContext('2d')!;
+  const c = canvas.width / 2;
+  g.clearRect(0, 0, canvas.width, canvas.height);
+  g.drawImage(ring, 0, 0);
+  g.beginPath();
+  g.arc(c, c, c * 0.4, 0, Math.PI * 2);
+  g.fillStyle = accent(model, model.signature());
+  g.fill();
+  g.lineWidth = 1.5;
+  g.strokeStyle = 'rgb(0 0 0 / 0.5)';
+  g.stroke();
 }
 
 function select(film: Film): void {
