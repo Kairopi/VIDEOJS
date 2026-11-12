@@ -103,7 +103,8 @@ main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline:
   gap: 24px;
   height: var(--bar-h);
   padding: 0 var(--edge);
-  color: #fff;
+  /* The page's ink, so the bar reads on the light page as well as the dark one. */
+  color: var(--ink);
   transition: background-color 300ms ease, color 300ms ease, box-shadow 300ms ease;
 }
 .bar[data-solid] {
@@ -114,9 +115,11 @@ main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline:
   color: var(--ink);
 }
 .bar a { text-decoration: none; }
-.bar-mark { display: inline-flex; align-items: center; gap: 10px; font-family: var(--display); font-size: 27px; font-style: italic; font-weight: 400; line-height: 1; letter-spacing: -0.01em; }
+.bar-mark { display: inline-flex; align-items: center; gap: 10px; line-height: 1; }
+/* The name in its own face, used nowhere else: Pinyon Script, a copperplate hand, like a signature on a title card. */
+.bar-word { padding: 4px 4px 0 2px; font-family: 'Pinyon Script', var(--display); font-size: 34px; font-weight: 400; line-height: 1; }
 /* The mark: a tiny reel of the film that's on, turning while it plays. */
-.bar-reel { width: 22px; height: 22px; border-radius: 50%; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.12); }
+.bar-reel { width: 22px; height: 22px; border-radius: 50%; box-shadow: 0 0 0 1px var(--hair); }
 @keyframes bar-turn { to { rotate: 1turn; } }
 :root[data-room='down'] .bar-reel { animation: bar-turn 10s linear infinite; }
 @media (prefers-reduced-motion: reduce) { :root[data-room='down'] .bar-reel { animation: none; } }
