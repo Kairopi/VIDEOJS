@@ -1414,7 +1414,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: clamp(14px, 5.5cqi, 60px);
+      gap: clamp(16px, 3.6cqi, 40px);
       pointer-events: none;
       transition:
         opacity var(--media-duration-controls) ease,
@@ -1438,7 +1438,7 @@
       visibility: hidden;
     }
     .tint-transport .tint-button {
-      --size: clamp(44px, 7.4cqi, 66px);
+      --size: clamp(36px, 4.6cqi, 48px);
       width: var(--size);
       height: var(--size);
       border-radius: 50%;
@@ -1449,22 +1449,117 @@
       backdrop-filter: blur(16px) saturate(1.5);
       transition: background-color var(--tint-duration-fast) ease, scale 160ms var(--tint-ease-out);
     }
-    /* Play is the big one, in the scene's own colour. */
+    /* Play: the hub of the reel, in the scene's own colour, ringed by the film. */
     .tint-transport .tint-play {
-      --size: clamp(58px, 10.5cqi, 96px);
+      --size: clamp(54px, 7.2cqi, 76px);
       color: var(--tint-on-accent);
       background: oklch(var(--tint-l) var(--tint-c) var(--tint-h) / 0.94);
       box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.3), 0 0 0 1px oklch(0 0 0 / 0.12), 0 14px 44px oklch(var(--tint-l) var(--tint-c) var(--tint-h) / 0.32);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
+      transform-style: preserve-3d;
     }
     :where([data-tint-contrast='more']) .tint-transport .tint-play { background: var(--tint-accent); }
     .tint-transport .tint-icon { width: 46%; height: 46%; }
-    .tint-transport .tint-play .tint-icon { width: 44%; height: 44%; }
+    .tint-transport .tint-play .tint-icon { position: relative; z-index: 2; width: 44%; height: 44%; }
+    .tint-transport .tint-play:has(.tint-reel[data-ready]) .tint-icon { width: 27%; height: 27%; }
     @media (hover: hover) {
       .tint-transport .tint-button:hover { background: oklch(0.2 calc(var(--tint-c, 0) * 0.3) var(--tint-h) / 0.55); scale: 1.06; }
       .tint-transport .tint-play:hover { background: oklch(var(--tint-l) var(--tint-c) var(--tint-h)); }
     }
+
+    /* ---------- The reel ---------- */
+
+    /* Once the film's colours are in, the play button becomes a disc of them: the hub carries the icon, the ring
+       around it is the whole film, lit as far as you have watched. It turns while the film plays (tint-transport). */
+    .tint-reel {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      display: none;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .tint-reel[data-ready] { display: block; }
+    .tint-transport .tint-play:has(.tint-reel[data-ready]) {
+      background: transparent;
+      box-shadow: 0 0 0 1px oklch(0 0 0 / 0.35), 0 14px 40px rgb(0 0 0 / 0.45), 0 0 34px -6px oklch(var(--tint-l) var(--tint-c) var(--tint-h) / 0.55);
+    }
+    .tint-reel-disc {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      will-change: rotate;
+    }
+    .tint-reel-disc canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .tint-reel-lit {
+      -webkit-mask: conic-gradient(#000 var(--tint-reel-at, 0deg), transparent 0);
+      mask: conic-gradient(#000 var(--tint-reel-at, 0deg), transparent 0);
+    }
+    /* Where you are: a fine bright tick across the ring at the playhead, turning with it. */
+    .tint-reel-disc::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: conic-gradient(transparent calc(var(--tint-reel-at, 0deg) - 2.4deg), #fff calc(var(--tint-reel-at, 0deg) - 2.4deg) var(--tint-reel-at, 0deg), transparent var(--tint-reel-at, 0deg));
+      -webkit-mask: radial-gradient(closest-side, transparent 50%, #000 51%);
+      mask: radial-gradient(closest-side, transparent 50%, #000 51%);
+      opacity: 0.9;
+    }
+    /* The hub: the accent, slightly domed, with a fine groove where it meets the film. */
+    .tint-reel-hub {
+      position: absolute;
+      inset: 25%;
+      border-radius: 50%;
+      background:
+        radial-gradient(120% 120% at 35% 25%, oklch(1 0 0 / 0.28), transparent 55%),
+        oklch(var(--tint-l) var(--tint-c) var(--tint-h));
+      box-shadow: 0 0 0 1.5px oklch(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.35), inset 0 -2px 4px oklch(0 0 0 / 0.18);
+      transition: background-color var(--tint-duration) ease;
+    }
+    :where([data-tint-contrast='more']) .tint-reel-hub { background: var(--tint-accent); }
+    @media (hover: hover) {
+      .tint-transport .tint-play:hover .tint-reel-hub { background-color: oklch(var(--tint-l) var(--tint-c) var(--tint-h)); }
+    }
+    /* Light catching the disc where the pointer is, as on a record turned under a lamp. */
+    .tint-reel-glare {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      border-radius: 50%;
+      opacity: var(--tint-glare, 0);
+      background: radial-gradient(circle at var(--tint-glare-x, 50%) var(--tint-glare-y, 30%), oklch(1 0 0 / 0.42), transparent 48%);
+      mix-blend-mode: soft-light;
+    }
+    .tint-transport .tint-play:active { scale: 0.93; }
+    :where([data-tint='quiet']) .tint-reel { display: none; }
+    :where([data-tint='quiet']) .tint-transport .tint-play { background: oklch(var(--tint-l) var(--tint-c) var(--tint-h) / 0.94); }
+    @media (forced-colors: active) { .tint-reel { display: none; } }
+
+    /* Ten seconds: the step shows beside the button and adds up while you keep pressing. */
+    .tint-seek-chip {
+      position: absolute;
+      top: 50%;
+      z-index: 3;
+      translate: 0 -50%;
+      padding: 0.18em 0.5em;
+      border-radius: 999px;
+      background: oklch(0.14 0.02 var(--tint-h) / 0.72);
+      color: #fff;
+      font-size: clamp(11px, 1.3cqi, 13px);
+      font-weight: 720;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      transition: opacity 260ms ease, translate 260ms var(--tint-ease-out);
+    }
+    .tint-seek-back .tint-seek-chip { inset-inline-end: calc(100% + 8px); }
+    .tint-seek-forward .tint-seek-chip { inset-inline-start: calc(100% + 8px); }
+    .tint-seek-chip[data-on] { opacity: 1; transition-duration: 80ms; }
     .tint-transport .tint-button:active { scale: 0.92; }
     .tint-transport .tint-button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; box-shadow: 0 0 0 6px var(--tint-halo); }
     /* The transport answers a click on the picture itself, so the separate mark is only for when it is hidden. */
@@ -1480,9 +1575,10 @@
       .tint-transport { bottom: var(--tint-bar-h, 0px); }
     }
     @container media-root (width < 26rem) {
-      .tint-transport { gap: 12px; }
-      .tint-transport .tint-button { --size: 38px; }
-      .tint-transport .tint-play { --size: 50px; }
+      .tint-transport { gap: 14px; }
+      .tint-transport .tint-button { --size: 34px; }
+      .tint-transport .tint-play { --size: 48px; }
+      .tint-seek-chip { display: none; }
     }
 
     /* ---------- Icons that move ---------- */
@@ -1497,16 +1593,57 @@
       .tint-play[data-started]:not([data-paused]):not([data-ended]) .tint-pp-a { d: path('M7.4 5.8L10.4 5.8L10.4 18.2L7.4 18.2Z'); }
       .tint-play[data-started]:not([data-paused]):not([data-ended]) .tint-pp-b { d: path('M13.6 5.8L16.6 5.8L16.6 18.2L13.6 18.2Z'); }
     }
-    /* Ten seconds: the arrow winds back or on as you press, and springs home. The number stays still. */
+    /* Ten seconds: the arrow turns right round on each press (tint-transport); the number stays still and dips. */
     .tint-seek .tint-icon path {
       transform-box: view-box;
       transform-origin: 12px 12.6px;
-      transition: rotate 420ms cubic-bezier(0.34, 1.4, 0.64, 1);
     }
-    .tint-seek-back:active .tint-icon path { rotate: -48deg; transition-duration: 110ms; transition-timing-function: ease-out; }
-    .tint-seek-forward:active .tint-icon path { rotate: 48deg; transition-duration: 110ms; transition-timing-function: ease-out; }
     .tint-seek .tint-icon text { transition: scale 160ms ease; transform-box: fill-box; transform-origin: center; }
     .tint-seek:active .tint-icon text { scale: 0.86; }
+
+    /* State changes move, so you see what a press did. */
+    .tint-icon :is(path, rect) { transform-box: view-box; transform-origin: 12px 12px; }
+    /* Mute: the cross draws itself, one stroke then the other. Unmute: the waves come back out of the speaker. */
+    .tint-volume-off-icon path:nth-child(n + 2) { stroke-dasharray: 7.2; stroke-dashoffset: 7.2; transition: stroke-dashoffset 180ms ease-out; }
+    .tint-volume-off-icon path:nth-child(3) { transition-delay: 90ms; }
+    .tint-mute:is([data-muted], [data-volume-level='off']) .tint-volume-off-icon path:nth-child(n + 2) { stroke-dashoffset: 0; }
+    :is(.tint-volume-high-icon, .tint-volume-low-icon) path:nth-child(n + 2) {
+      transform-origin: 12px 12px;
+      opacity: 0;
+      translate: -3px 0;
+      transition: opacity 220ms ease, translate 260ms var(--tint-ease-out);
+    }
+    .tint-volume-high-icon path:nth-child(3) { transition-delay: 70ms; }
+    .tint-mute:not([data-muted])[data-volume-level='low'] .tint-volume-low-icon path,
+    .tint-mute:not([data-muted]):not([data-volume-level='low']):not([data-volume-level='off']) .tint-volume-high-icon path { opacity: 1; translate: 0 0; }
+    /* Fullscreen: the four corners fly out to the edges going in, and fold back in coming out. */
+    .tint-fullscreen .tint-icon path { transition: translate 300ms var(--tint-ease-out), scale 220ms var(--tint-ease-out); }
+    .tint-fullscreen-exit-icon path:nth-child(1) { translate: -3px -3px; }
+    .tint-fullscreen-exit-icon path:nth-child(2) { translate: 3px -3px; }
+    .tint-fullscreen-exit-icon path:nth-child(3) { translate: 3px 3px; }
+    .tint-fullscreen-exit-icon path:nth-child(4) { translate: -3px 3px; }
+    .tint-fullscreen:not([data-fullscreen]) .tint-fullscreen-enter-icon path:nth-child(1) { translate: 0 0; }
+    .tint-fullscreen[data-fullscreen] .tint-fullscreen-enter-icon path:nth-child(1) { translate: 3px 3px; }
+    .tint-fullscreen[data-fullscreen] .tint-fullscreen-enter-icon path:nth-child(2) { translate: -3px 3px; }
+    .tint-fullscreen[data-fullscreen] .tint-fullscreen-enter-icon path:nth-child(3) { translate: -3px -3px; }
+    .tint-fullscreen[data-fullscreen] .tint-fullscreen-enter-icon path:nth-child(4) { translate: 3px -3px; }
+    .tint-fullscreen[data-fullscreen] .tint-fullscreen-exit-icon path { translate: 0 0; }
+    /* Captions on: the box fills from the left, like a line of subtitles arriving. */
+    .tint-captions-on-icon { clip-path: inset(0 100% 0 0); transition: opacity var(--tint-duration-fast) ease, scale var(--tint-duration-fast) var(--tint-ease-out), clip-path 320ms var(--tint-ease-out); }
+    .tint-captions[data-active] .tint-captions-on-icon { clip-path: inset(0 0 0 0); }
+    /* Picture in picture: the small window slides out into its corner, and back in. */
+    .tint-pip .tint-icon :is(rect, path:last-child) { transition: translate 300ms var(--tint-ease-out); }
+    .tint-pip:not([data-pip]) .tint-pip-exit-icon path:last-child { translate: -4px -4px; }
+    .tint-pip[data-pip] .tint-pip-enter-icon rect { translate: -4px -4px; }
+    /* Scenes: the bars of the little barcode rise one after another, like the timeline opening. */
+    @keyframes tint-riffle { 0%, 100% { scale: 1 1; } 45% { scale: 1 0.55; } }
+    .tint-scenes-button .tint-icon rect { transform-origin: 50% 100%; transform-box: fill-box; }
+    @media (hover: hover) {
+      .tint-scenes-button:hover .tint-icon rect { animation: tint-riffle 380ms var(--tint-ease-out) both; }
+      .tint-scenes-button:hover .tint-icon rect:nth-child(2) { animation-delay: 50ms; }
+      .tint-scenes-button:hover .tint-icon rect:nth-child(3) { animation-delay: 100ms; }
+      .tint-scenes-button:hover .tint-icon rect:nth-child(4) { animation-delay: 150ms; }
+    }
     /* Volume: the waves pulse out once when you point at it. */
     @keyframes tint-wave { 0% { opacity: 0.25; translate: -1.5px 0; } 100% { opacity: 1; translate: 0 0; } }
     @media (hover: hover) {
