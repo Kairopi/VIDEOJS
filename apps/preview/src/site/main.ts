@@ -661,27 +661,102 @@ $('.skip').addEventListener('click', (e) => {
 
 // ---------------------------------------------------------------- The four films, under the player
 
-const pickEls = FILMS.map((film) => {
+interface Pick {
+  film: Film;
+  button: HTMLButtonElement;
+  /** The fingerprint band, where the stage's frames land. */
+  canvas: HTMLCanvasElement;
+  art: HTMLCanvasElement;
+  shown: number;
+}
+const pickEls: Pick[] = FILMS.map((film) => {
+  // A small title card per film, like a streaming shelf: a real still from the film, its name and facts, and its
+  // fingerprint as a thin band along the bottom (where the stage's frames land). Point along a card to riffle through
+  // that film; the one playing shows where you are on its band.
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'pick';
-  b.innerHTML = '<canvas aria-hidden="true"></canvas><span></span>';
-  b.querySelector('span')!.textContent = film.title;
+  b.innerHTML =
+    '<canvas class="pick-art" aria-hidden="true"></canvas><span class="pick-shade" aria-hidden="true"></span>' +
+    '<span class="pick-text"><b></b><small></small></span>' +
+    '<span class="pick-band" aria-hidden="true"><canvas></canvas><i class="pick-head"></i></span>';
+  b.querySelector('b')!.textContent = film.title;
+  b.querySelector('small')!.textContent = String(film.year);
   b.setAttribute('aria-label', `${film.title}, ${film.year}. ${film.line}`);
   b.addEventListener('click', () => select(film));
   $('.films-pick').append(b);
-  return { film, button: b, canvas: b.querySelector('canvas')! };
+  const pick: Pick = { film, button: b, canvas: b.querySelector<HTMLCanvasElement>('.pick-band canvas')!, art: b.querySelector<HTMLCanvasElement>('.pick-art')!, shown: -1 };
+  b.addEventListener('pointermove', (e) => {
+    const i = FILMS.indexOf(film);
+    const model = filmModels[i];
+    if (e.pointerType === 'touch' || !model || model.status !== 'ready') return;
+    const r = b.getBoundingClientRect();
+    paintArt(pick, model, clamp(Math.floor(((e.clientX - r.left) / r.width) * model.frames.length), 0, model.frames.length - 1));
+  });
+  b.addEventListener('pointerleave', () => {
+    const model = filmModels[FILMS.indexOf(film)];
+    if (model?.status === 'ready') paintArt(pick, model, model.keyArt());
+  });
+  return pick;
 });
 const currentIndex = () => FILMS.indexOf(current);
 
+/** A frame into a card: the sharp still when it has arrived (and asked for when it hasn't), the storyboard tile till then. */
+function paintArt(pick: Pick, model: TintModel, index: number): void {
+  const f = model.frames[index];
+  const tile = f && model.image(f.url);
+  if (!f || !tile) return;
+  const s = sizeOf(pick.art);
+  const sharp = model.sharp(index, s.w);
+  const key = `${index}:${sharp ? 'hi' : 'lo'}:${s.w}x${s.h}`;
+  if (pick.art.dataset.key === key) return;
+  pick.art.dataset.key = key;
+  pick.shown = index;
+  if (pick.art.width !== s.w || pick.art.height !== s.h) {
+    pick.art.width = s.w;
+    pick.art.height = s.h;
+  }
+  const g = pick.art.getContext('2d')!;
+  g.imageSmoothingQuality = 'high';
+  // Cover: the middle of the picture, cropped to the card's shape.
+  const [src, sx, sy, sw, sh] = sharp ? [sharp, 0, 0, sharp.naturalWidth, sharp.naturalHeight] as const : [tile, f.x, f.y, f.w, f.h] as const;
+  const a = s.w / s.h;
+  const cw = sw / sh > a ? sh * a : sw;
+  const ch = sw / sh > a ? sh : sw / a;
+  g.drawImage(src, sx + (sw - cw) / 2, sy + (sh - ch) / 2, cw, ch, 0, 0, s.w, s.h);
+}
+
 function paintPicks(): void {
-  pickEls.forEach(({ canvas: c }, i) => {
+  pickEls.forEach((pick, i) => {
     const model = filmModels[i];
     if (!model || model.status !== 'ready') return;
-    const s = sizeOf(c);
-    draw(c, model.print(s.w, s.h, LIT));
+    const s = sizeOf(pick.canvas);
+    draw(pick.canvas, model.print(s.w, s.h, LIT));
+    if (!pick.button.matches(':hover')) paintArt(pick, model, model.keyArt());
+    pick.button.querySelector('small')!.textContent = `${pick.film.year} · ${formatTime(Math.floor(model.duration))}`;
+    // The sharp still replaces the tile when it lands.
+    if (!pick.art.dataset.listening) {
+      pick.art.dataset.listening = '';
+      model.addEventListener('sharp', () => {
+        if (pick.shown >= 0) {
+          delete pick.art.dataset.key;
+          paintArt(pick, model, pick.shown);
+        }
+      });
+    }
   });
 }
+
+// The card that is playing shows where you are along its band.
+player.addEventListener(
+  'timeupdate',
+  () => {
+    const m = media();
+    const pick = pickEls[currentIndex()];
+    if (m && pick && m.duration) pick.button.style.setProperty('--at', `${(m.currentTime / m.duration) * 100}%`);
+  },
+  true
+);
 
 function syncChoice(): void {
   for (const p of pickEls) p.button.setAttribute('aria-pressed', String(p.film === current));

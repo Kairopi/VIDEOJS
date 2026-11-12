@@ -14,7 +14,7 @@
   --max: 1360px;
   --bar-h: 60px;
   /* Room the landed player leaves for the bar above it and the films below it. */
-  --chrome: 216px;
+  --chrome: 244px;
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
   --font: 'Mona Sans', ui-sans-serif, system-ui, sans-serif;
 }
@@ -181,9 +181,12 @@ html.lenis { scroll-snap-type: none; }
 .credit a { text-decoration-color: var(--hair); }
 .shelf { flex-wrap: wrap; row-gap: 10px; }
 .films-pick { min-width: 0; }
+/* A small title card per film: a real still, the name, and the film's fingerprint as a band along the bottom.
+   The one playing is in full colour with its playhead on the band; the others wait, dimmed, until pointed at. */
 .pick {
+  --band: 6px;
   position: relative;
-  height: 64px;
+  height: var(--pick-h, 92px);
   padding: 0;
   overflow: hidden;
   border: 0;
@@ -193,22 +196,62 @@ html.lenis { scroll-snap-type: none; }
   font: inherit;
   text-align: start;
   cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
   transition: scale 90ms ease;
 }
-.pick canvas { position: absolute; inset: 0; width: 100%; height: 100%; filter: brightness(0.62) saturate(0.85); transition: filter 220ms ease; }
-.pick span {
+.pick-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: brightness(0.5) saturate(0.7);
+  transition: filter 260ms ease, scale 600ms var(--ease);
+}
+/* Shade for the words, from the bottom-left, so they read on any still. */
+.pick-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.72), rgb(0 0 0 / 0.2) 55%, transparent), linear-gradient(to right, rgb(0 0 0 / 0.45), transparent 70%);
+  pointer-events: none;
+}
+.pick-text {
   position: absolute;
   left: 14px;
-  bottom: 10px;
-  font-size: 14px;
-  font-weight: 640;
-  text-shadow: 0 1px 8px rgb(0 0 0 / 0.9);
+  right: 14px;
+  bottom: calc(var(--band) + 10px);
+  display: grid;
+  gap: 1px;
+  line-height: 1.15;
+  text-shadow: 0 1px 10px rgb(0 0 0 / 0.7);
+}
+.pick-text b { font-size: 15px; font-stretch: 110%; font-weight: 680; letter-spacing: -0.01em; }
+.pick-text small { color: rgb(255 255 255 / 0.68); font-size: 12px; font-weight: 520; font-variant-numeric: tabular-nums; }
+.pick-band { position: absolute; inset: auto 0 0; height: var(--band); overflow: hidden; }
+.pick-band canvas { display: block; width: 100%; height: 100%; filter: brightness(0.55) saturate(0.7); transition: filter 260ms ease; }
+.pick-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: clamp(0px, var(--at, 0%), calc(100% - 2px));
+  width: 2px;
+  background: #fff;
+  box-shadow: 0 0 6px rgb(255 255 255 / 0.8);
+  opacity: 0;
 }
 .pick:active { scale: 0.98; }
-@media (hover: hover) { .pick:hover canvas { filter: none; } }
-.pick[aria-pressed='true'] canvas { filter: none; }
-.pick[aria-pressed='true'] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink); }
+@media (hover: hover) {
+  .pick:hover .pick-art { filter: brightness(0.82) saturate(0.95); scale: 1.03; }
+  .pick:hover .pick-band canvas { filter: none; }
+}
+.pick[aria-pressed='true'] .pick-art { filter: none; }
+.pick[aria-pressed='true'] .pick-band canvas { filter: none; }
+.pick[aria-pressed='true'] .pick-head { opacity: 1; }
+/* The one playing: ringed in its own colour. */
+.pick[aria-pressed='true'] { box-shadow: inset 0 0 0 1.5px var(--bar-chip, #fff); }
 .pick:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; border-radius: 14px; }
+@media (prefers-reduced-motion: reduce) { .pick-art { transition: none; } .pick:hover .pick-art { scale: none; } }
+:root[data-tint-motion='reduce'] .pick-art { transition: none; }
+:root[data-tint-motion='reduce'] .pick:hover .pick-art { scale: none; }
 
 .test-open {
   display: inline-flex;
@@ -233,7 +276,7 @@ html.lenis { scroll-snap-type: none; }
 .test-open:active { scale: 0.97; }
 .test-open[aria-expanded='true'] { background: var(--ink); color: var(--bg); box-shadow: none; }
 
-.shelf-tools { display: flex; align-items: center; gap: 10px; }
+.shelf-tools { display: flex; align-items: center; align-self: center; gap: 10px; }
 
 /* House lights: a glazed pill holding the film's fingerprint, and a glass marble that rolls across it.
    Lights down is the dark page; lights up, the light one. */
@@ -652,13 +695,13 @@ html.lenis { scroll-snap-type: none; }
 }
 
 @media (max-width: 700px) {
-  :root { --bar-h: 54px; --chrome: 300px; }
+  :root { --bar-h: 54px; --chrome: 332px; }
   .bar-links a:not([data-section='watch']):not([href^='https']) { display: none; }
   /* On narrow panels the names run up the panel, like a film credit on a spine. */
   .sv-titles span { bottom: 18px; writing-mode: vertical-rl; rotate: 180deg; font-size: 14px; }
   .shelf { flex-direction: column; }
   .films-pick { grid-template-columns: 1fr 1fr; }
-  .pick { height: 56px; }
+  .pick { --pick-h: 72px; }
   .test-open { justify-content: center; height: 52px; }
   .shelf-tools .test-open { flex: 1; }
   .shelf { flex-wrap: nowrap; }
