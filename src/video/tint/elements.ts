@@ -1399,7 +1399,6 @@ export class TintPauseElement extends UIElement {
   #container: HTMLElement | null = null;
   #kicker = document.createElement('p');
   #scene = document.createElement('span');
-  #colours = document.createElement('span');
   #range = document.createElement('span');
   #showTimer = 0;
   #restTimer = 0;
@@ -1409,15 +1408,14 @@ export class TintPauseElement extends UIElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.setAttribute('aria-hidden', 'true');
+    // Type only, like a streaming title card: a quiet word, the title, and one line saying where you are.
     this.#kicker.className = 'tint-pause-kicker';
-    const word = text('tint.paused', 'Paused');
-    this.#scene.className = 'tint-pause-scene';
-    this.#kicker.append(word, this.#scene);
+    this.#kicker.append(text('tint.paused', 'Paused'));
     const foot = document.createElement('p');
     foot.className = 'tint-pause-foot';
-    this.#colours.className = 'tint-pause-colours';
+    this.#scene.className = 'tint-pause-scene';
     this.#range.className = 'tint-pause-range';
-    foot.append(this.#colours, this.#range);
+    foot.append(this.#scene, this.#range);
     // The title stays as authored in the template (a <media-title>); the kicker goes above it and the foot below.
     this.prepend(this.#kicker);
     this.append(foot);
@@ -1482,7 +1480,6 @@ export class TintPauseElement extends UIElement {
     const now = this.#time.value?.currentTime ?? 0;
     if (!model || model.status !== 'ready' || !model.scenes.length) {
       this.#scene.textContent = '';
-      this.#colours.replaceChildren();
       this.#range.textContent = '';
       return;
     }
@@ -1493,18 +1490,6 @@ export class TintPauseElement extends UIElement {
     this.#scene.replaceChildren(
       ...(scene.title ? [document.createTextNode(scene.title)] : [text('tint.scene', 'Scene'), document.createTextNode(` ${k + 1} / ${model.scenes.length}`)])
     );
-    // The scene's colours: its frames' accents, a few evenly through the scene, in film order.
-    const first = model.frameAt(scene.start);
-    const last = Math.max(first, model.frameAt(Math.max(scene.start, scene.end - 0.01)));
-    const count = Math.min(5, last - first + 1);
-    const swatches: HTMLElement[] = [];
-    for (let i = 0; i < count; i++) {
-      const index = Math.round(first + ((last - first) * i) / Math.max(1, count - 1));
-      const sw = document.createElement('i');
-      sw.style.background = accentCss(model, index);
-      swatches.push(sw);
-    }
-    this.#colours.replaceChildren(...swatches);
     this.#range.textContent = `${formatTime(scene.start)} – ${formatTime(scene.end)}`;
   }
 }

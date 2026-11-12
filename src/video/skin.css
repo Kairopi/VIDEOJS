@@ -1331,45 +1331,39 @@
     :scope[data-tint-pause-rest] .tint-pause,
     :scope[data-tint-pause-rest]::before { transition-duration: 900ms; }
 
+    /* Three levels and nothing else: a quiet word, the title, where you are. */
+    .tint-pause { gap: clamp(4px, 0.8cqi, 8px); }
     .tint-pause-kicker {
-      display: flex;
-      gap: 0.7em;
       color: var(--tint-ink-2);
-      font-size: clamp(10px, 1.15cqi, 12.5px);
+      font-size: clamp(10px, 1.1cqi, 12px);
       font-weight: 650;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
     }
-    .tint-pause-scene { color: var(--tint-accent); }
-    .tint-pause-scene:empty { display: none; }
     .tint-pause-title {
-      font-size: clamp(20px, 4.2cqi, 46px);
+      font-size: clamp(22px, 4.4cqi, 50px);
       font-stretch: 125%;
-      font-weight: 760;
+      font-weight: 780;
       line-height: 0.95;
-      letter-spacing: -0.025em;
+      letter-spacing: -0.03em;
       text-wrap: balance;
+      text-shadow: 0 2px 24px rgb(0 0 0 / 0.35);
     }
     .tint-pause-foot {
       display: flex;
-      align-items: center;
-      gap: calc(var(--media-spacing) * 3);
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0 0.55em;
+      margin-top: clamp(2px, 0.4cqi, 4px);
       color: var(--tint-ink-2);
-      font-size: clamp(12px, 1.35cqi, 14px);
-      font-weight: 560;
+      font-size: clamp(12px, 1.4cqi, 15px);
+      font-weight: 480;
       font-variant-numeric: tabular-nums;
     }
+    .tint-pause-scene { color: var(--tint-ink); font-weight: 600; }
+    .tint-pause-scene:empty,
     .tint-pause-range:empty { display: none; }
-    /* The scene's colours, from its frames in film order. */
-    .tint-pause-colours { display: flex; gap: 3px; }
-    .tint-pause-colours:empty { display: none; }
-    .tint-pause-colours i {
-      display: block;
-      width: calc(var(--media-spacing) * 4.5);
-      height: calc(var(--media-spacing) * 4.5);
-      border-radius: calc(var(--media-spacing) * 1.25);
-      box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.16);
-    }
+    .tint-pause-scene:not(:empty) + .tint-pause-range:not(:empty)::before { content: '·'; margin-inline-end: 0.55em; }
     @container media-root (width < 30rem) {
       .tint-pause-foot { display: none; }
     }
