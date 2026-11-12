@@ -9,12 +9,16 @@ import { registerI18n } from '@videojs/html/i18n';
 import type { MediaTextCue } from '@videojs/html';
 
 import Lenis from 'lenis';
-import Snap from 'lenis/snap';
 import 'lenis/dist/lenis.css';
 
 import { FILMS, type Film } from './films';
 import { Glass } from './glass';
 import './site.css';
+
+/**
+ * The site, in three parts: the player first, with the four films under it; how it works, told by the film as you
+ * scroll; and how to use it. Every picture on the page comes from the films' own storyboards and stills.
+ */
 
 const PLACEHOLDER = '<!-- Add a compatible media component here. -->';
 const LIT = 'saturate(1.4) contrast(1.08) brightness(1.06)';
@@ -31,7 +35,7 @@ const smooth = (a: number, b: number, x: number) => {
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 const formatTime = (seconds: number) => {
-  const s = Math.max(0, Math.round(seconds));
+  const s = Math.max(0, Math.floor(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
@@ -64,6 +68,7 @@ function modelFor(film: Film): Promise<TintModel> {
   }
   return p;
 }
+const filmModels: (TintModel | null)[] = FILMS.map(() => null);
 
 function sizeOf(el: Element): { w: number; h: number } {
   const r = el.getBoundingClientRect();
@@ -77,18 +82,6 @@ function draw(canvas: HTMLCanvasElement, source: HTMLCanvasElement | null): void
   canvas.getContext('2d')!.drawImage(source, 0, 0);
 }
 
-/** Show one storyboard frame in an element, scaled to the element's width. */
-function showFrame(model: TintModel, el: HTMLElement, index: number): void {
-  const f = model.frames[index];
-  const img = f && model.image(f.url);
-  if (!f || !img) return;
-  const k = (el.getBoundingClientRect().width || 200) / f.w;
-  el.style.backgroundImage = `url("${f.url}")`;
-  el.style.backgroundSize = `${img.naturalWidth * k}px ${img.naturalHeight * k}px`;
-  el.style.backgroundPosition = `${-f.x * k}px ${-f.y * k}px`;
-  if (f.w && f.h) el.style.aspectRatio = `${f.w} / ${f.h}`;
-}
-
 const accent = (model: TintModel, frame: number) => {
   const a = model.accentOf(frame);
   return `oklch(${a.l} ${a.c} ${a.h})`;
@@ -98,6 +91,7 @@ const accent = (model: TintModel, frame: number) => {
 
 let current: Film = FILMS[0]!;
 const frame = $('.player-frame');
+const bar = $('.bar');
 const i18n = document.createElement('media-i18n');
 i18n.setAttribute('lang', 'en');
 const player = document.createElement('video-player');
@@ -109,7 +103,6 @@ player.innerHTML = skinTemplate.replace(
 i18n.append(player);
 $('#player').append(i18n);
 const media = () => player.querySelector('mux-video') as (HTMLElement & HTMLMediaElement) | null;
-const skin = () => player.querySelector<HTMLElement>('.media-skin');
 
 /** The poster's title card, the way a streaming service presents a film: studio, facts, licence, one line. */
 function fillTitleCard(film: Film): void {
@@ -129,550 +122,20 @@ function fillTitleCard(film: Film): void {
 }
 fillTitleCard(current);
 
-// ---------------------------------------------------------------- The columns: one per real storyboard frame
-
-/** Each frame becomes one column, drawn from an atlas where it is SLITS pixels wide. */
-const SLITS = 3;
-const ATLAS_H = 240;
-interface Column {
-  film: number;
-  frame: number;
-  ax: number;
-  /** Place in the spectrum, 0..1. */
-  rank: number;
-}
-let columns: Column[] = [];
-let spectrum: Column[] = [];
-let atlas: HTMLCanvasElement | null = null;
-const filmModels: (TintModel | null)[] = FILMS.map(() => null);
-
-function buildColumns(): void {
-  const ready = filmModels.every((m) => m?.status === 'ready');
-  if (!ready) return;
-  const all: (Column & { key: number })[] = [];
-  let ax = 0;
-  filmModels.forEach((model, film) => {
-    model!.frames.forEach((f, i) => {
-      // Sort by the frame's mean colour, which is what its column looks like. Near-greys open the spectrum, dark to
-      // light; colours follow round the wheel from red, each hue band running dark to light.
-      const [L, a, b] = f.lab;
-      const chroma = Math.hypot(a, b);
-      const hue = ((Math.atan2(b, a) * 180) / Math.PI + 360 - 15) % 360;
-      const key = chroma < 0.018 ? L : 1 + Math.floor(hue / 15) + L * 0.99;
-      all.push({ film, frame: i, ax, rank: 0, key });
-      ax += SLITS;
-    });
-  });
-  const raw = document.createElement('canvas');
-  raw.width = ax;
-  raw.height = ATLAS_H;
-  const rg = raw.getContext('2d')!;
-  rg.imageSmoothingQuality = 'high';
-  for (const c of all) {
-    const model = filmModels[c.film]!;
-    const f = model.frames[c.frame]!;
-    const img = model.image(f.url);
-    if (!img) continue;
-    for (let k = 0; k < SLITS; k++) rg.drawImage(img, f.x + (k * f.w) / SLITS, f.y, f.w / SLITS, f.h, c.ax + k, 0, 1, ATLAS_H);
-  }
-  atlas = document.createElement('canvas');
-  atlas.width = ax;
-  atlas.height = ATLAS_H;
-  const ag = atlas.getContext('2d')!;
-  ag.filter = LIT;
-  ag.drawImage(raw, 0, 0);
-
-  spectrum = [...all].sort((p, q) => p.key - q.key);
-  spectrum.forEach((c, r) => (c.rank = r / spectrum.length));
-  columns = all;
-  view.dataset.ready = '';
-  requestDraw();
-}
-
-// ---------------------------------------------------------------- The stage
-
-const stage = $('.stage');
-const pin = $('.stage-pin');
-const view = $('.stage-view');
-const canvas = $<HTMLCanvasElement>('.sv-canvas');
-const ctx = canvas.getContext('2d')!;
-const back = $('.sv-back');
-const shade = $('.sv-shade');
-const copy = $('.sv-copy');
-const caption = $('.sv-caption');
-const titles = $('.sv-titles');
-const lens = $('.sv-lens');
-const lensFrame = $('.sv-lens-frame');
-const lensCard = $('.sv-lens-card');
-const lensName = $('.sv-lens-name');
-const lensTime = $('.sv-lens-time');
-const glassCanvas = $<HTMLCanvasElement>('.sv-glass-canvas');
-const glass = Glass.create(glassCanvas);
-if (glass) lens.dataset.glass = '';
-const bar = $('.bar');
-
-// The film names over the four panels in the first act.
-const titleEls = FILMS.map((film) => {
-  const s = document.createElement('span');
-  s.innerHTML = '<b></b><small></small>';
-  s.querySelector('b')!.textContent = film.title;
-  s.querySelector('small')!.textContent = String(film.year);
-  titles.append(s);
-  return s;
-});
-
-// Pointing at a panel in the first act widens it.
-const weights = FILMS.map(() => 1);
-let hoverFilm = -1;
-
-let progress = 0;
-const travel = () => Math.max(1, stage.offsetHeight - pin.offsetHeight);
-const stageEnd = () => stage.getBoundingClientRect().top + window.scrollY + travel();
-/** Where the spectrum is held, and where the film has landed. */
-const SPECTRUM_AT = 0.48;
-
-// Act boundaries along the scroll.
-const toSpectrum = (p: number) => (calm() ? (p > 0.24 ? 1 : 0) : smooth(0.08, 0.4, p));
-const toPlayer = (p: number) => (calm() ? (p > 0.64 ? 1 : 0) : smooth(0.56, 0.9, p));
-
-interface Box {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-const rel = (el: Element | null, v: DOMRect): Box | null => {
-  const r = el?.getBoundingClientRect();
-  return r && r.width ? { x: r.left - v.left, y: r.top - v.top, w: r.width, h: r.height } : null;
-};
-
-/** Panel edges for the first act. */
-function panels(W: number): { x: number; w: number }[] {
-  const total = weights.reduce((a, b) => a + b, 0);
-  let x = 0;
-  return weights.map((wt) => {
-    const w = (wt / total) * W;
-    const out = { x, w };
-    x += w;
-    return out;
-  });
-}
-
-const STAGGER = 0.6;
-const wave = (phase: number, pos: number) => (calm() ? phase : easeInOut(clamp(phase * (1 + STAGGER) - pos * STAGGER, 0, 1)));
-
-let drawRaf = 0;
-function requestDraw(): void {
-  if (!drawRaf) drawRaf = requestAnimationFrame(() => ((drawRaf = 0), render()));
-}
-
-function render(): void {
-  const p = clamp(-stage.getBoundingClientRect().top / travel(), 0, 1);
-  progress = p;
-  const v = view.getBoundingClientRect();
-  const W = v.width;
-  const H = v.height;
-  const s1 = toSpectrum(p);
-  const s2 = toPlayer(p);
-
-  // Ease the panel widths toward the pointed-at film.
-  let settling = false;
-  weights.forEach((wt, k) => {
-    const goal = hoverFilm === k && s1 === 0 ? 2.1 : 1;
-    const next = calm() ? goal : wt + (goal - wt) * 0.16;
-    if (Math.abs(next - goal) > 0.002) settling = true;
-    weights[k] = Math.abs(next - goal) > 0.002 ? next : goal;
-  });
-
-  // Canvas at the view's pixel size.
-  const k = dpr();
-  const cw = Math.round(W * k);
-  const ch = Math.round(H * k);
-  if (canvas.width !== cw || canvas.height !== ch) {
-    canvas.width = cw;
-    canvas.height = ch;
-  }
-  ctx.setTransform(k, 0, 0, k, 0, 0);
-  ctx.clearRect(0, 0, W, H);
-  ctx.imageSmoothingEnabled = false;
-
-  const P = panels(W);
-  P.forEach((panel, i) => {
-    const t = titleEls[i]!;
-    t.style.left = `${panel.x + 16}px`;
-    t.style.maxWidth = `${Math.max(0, panel.w - 24)}px`;
-  });
-
-  if (atlas && columns.length) {
-    const target = rel(skin(), v);
-    const picks = pickEls.map((b) => rel(b.canvas, v));
-    const counts = filmModels.map((m) => m?.frames.length ?? 1);
-    for (const c of columns) {
-      const n = counts[c.film]!;
-      // Act 1: the film's own panel, in time order.
-      const panel = P[c.film]!;
-      const tx = panel.x + (panel.w * c.frame) / n;
-      const tw = panel.w / n;
-      // Act 2: its place in the spectrum.
-      const sx = W * c.rank;
-      const sw = W / spectrum.length;
-      // Act 3: back in time order, in the player or in its film's button.
-      const dest = c.film === currentIndex() ? target : picks[c.film];
-      const box = dest ?? { x: sx, y: H, w: sw, h: 0 };
-      const dx = box.x + (box.w * c.frame) / n;
-      const dw = box.w / n;
-
-      const e1 = wave(s1, (tx + tw / 2) / W);
-      const e2 = wave(s2, sx / W);
-      let x = lerp(tx, sx, e1);
-      let w = lerp(tw, sw, e1);
-      let y = 0;
-      let h = H;
-      // A lift as each column travels, so the wave reads as flight rather than a slide.
-      const lift = calm() ? 0 : Math.sin(Math.PI * e1) * 0.1 + Math.sin(Math.PI * e2) * 0.06;
-      y += (H * lift) / 2;
-      h -= H * lift;
-      x = lerp(x, dx, e2);
-      w = lerp(w, dw, e2);
-      y = lerp(y, box.y, e2);
-      h = lerp(h, box.h, e2);
-      ctx.drawImage(atlas, c.ax, 0, SLITS, ATLAS_H, x, y, w + 0.6, h);
-    }
-  }
-
-  // Words and light for each act.
-  const quiet = calm();
-  const copyFade = 1 - smooth(0.02, 0.13, p);
-  copy.style.opacity = String(copyFade);
-  // Once the words have faded, their Watch button can't be pressed or tabbed to by accident.
-  copy.inert = copyFade < 0.05;
-  copy.style.translate = quiet ? '' : `0 ${-p * 260}px`;
-  titles.style.opacity = String(1 - smooth(0.03, 0.1, p));
-  const cap = smooth(0.32, 0.41, p) * (1 - smooth(0.55, 0.62, p));
-  caption.style.opacity = String(cap);
-  caption.style.translate = quiet ? '' : `0 ${(1 - smooth(0.3, 0.42, p)) * 30 - smooth(0.55, 0.62, p) * 30}px`;
-  shade.style.opacity = String(1 - smooth(0.56, 0.7, p));
-
-  // Hand over to the real player and buttons as the frames land. Its poster is the same fingerprint.
-  const gone = quiet ? p > 0.7 : p > 0.985;
-  const fade = quiet ? (gone ? 0 : 1) : 1 - smooth(0.9, 0.985, p);
-  canvas.style.opacity = back.style.opacity = String(fade);
-  view.toggleAttribute('data-gone', gone);
-  view.toggleAttribute('data-touchable', !gone && (s2 === 0));
-  bar.toggleAttribute('data-solid', p > 0.9);
-
-  // The lens only while an act is held still.
-  const still = (s1 === 0 || (s1 === 1 && s2 === 0)) && !gone;
-  if (!still) lens.removeAttribute('data-on');
-  else drawGlass();
-
-  if (p >= 0.999) landed();
-  else if (p < 0.6) leftPlayer();
-  markSection();
-  if (settling) requestDraw();
-  if (p <= 0.01) startIdle();
-}
-
-window.addEventListener('scroll', requestDraw, { passive: true });
-new ResizeObserver(requestDraw).observe(frame);
-new ResizeObserver(requestDraw).observe(view);
-
-// ---------------------------------------------------------------- The lens: point at a moment
-
-let lensX = 0;
-let lensTarget = 0;
-let lensRaf = 0;
-let lensKey = '';
-
-/** The film and frame under a point, in whichever act is held. */
-function hit(x: number): { film: number; frame: number } | null {
-  if (!columns.length) return null;
-  const W = view.clientWidth;
-  const s1 = toSpectrum(progress);
-  if (s1 === 1) {
-    const c = spectrum[clamp(Math.floor((x / W) * spectrum.length), 0, spectrum.length - 1)]!;
-    return { film: c.film, frame: c.frame };
-  }
-  const P = panels(W);
-  const film = Math.max(0, P.findIndex((p) => x >= p.x && x < p.x + p.w));
-  const n = filmModels[film]?.frames.length ?? 1;
-  return { film, frame: clamp(Math.floor(((x - P[film]!.x) / P[film]!.w) * n), 0, n - 1) };
-}
-
-function moveLens(): void {
-  lensRaf = 0;
-  lensX = calm() ? lensTarget : lensX + (lensTarget - lensX) * 0.22;
-  const W = view.clientWidth;
-  lens.style.setProperty('--x', `${lensX}px`);
-  const half = (lensCard.offsetWidth || 220) / 2 + 12;
-  lens.style.setProperty('--card-x', `${clamp(lensX, half, W - half)}px`);
-  const h = hit(lensX);
-  const model = h && filmModels[h.film];
-  if (h && model) {
-    const key = `${h.film}:${h.frame}`;
-    if (key !== lensKey) {
-      lensKey = key;
-      if (glass) setGlassFrame(h.film, model, h.frame, key);
-      else showFrame(model, lensFrame, h.frame);
-      lens.style.setProperty('--lens-color', accent(model, h.frame));
-      lensName.textContent = FILMS[h.film]!.title;
-      lensTime.textContent = formatTime(model.frames[h.frame]!.start);
-    }
-  }
-  drawGlass((lensX - lensTarget) * 0.004);
-  if (Math.abs(lensTarget - lensX) > 0.5) lensRaf = requestAnimationFrame(moveLens);
-}
-
-/** Draw the glass where its card sits, over the columns as they are now. */
-function drawGlass(slide = 0): void {
-  if (!glass || !lens.hasAttribute('data-on')) return;
-  const v = view.getBoundingClientRect();
-  const g = glassCanvas.getBoundingClientRect();
-  if (!g.width) return;
-  try {
-    glass.draw(canvas, g.left - v.left + g.width / 2, g.top - v.top + g.height / 2, g.width, dpr(), slide);
-  } catch {
-    // A canvas the browser will not hand to WebGL: fall back to the flat card.
-    delete lens.dataset.glass;
-  }
-}
-
-// The storyboard tile shows at once; when the glass rests on a moment, a sharp frame from Mux replaces it.
-const sharpFrames = new Map<string, HTMLImageElement>();
-let sharpTimer = 0;
-function setGlassFrame(film: number, model: TintModel, index: number, key: string): void {
-  const f = model.frames[index];
-  const img = f && model.image(f.url);
-  if (!f || !img || !glass) return;
-  glass.setFrame(img, f.x, f.y, f.w, f.h);
-  lensFrame.style.removeProperty('background-image');
-  window.clearTimeout(sharpTimer);
-  sharpTimer = window.setTimeout(() => {
-    const url = `https://image.mux.com/${FILMS[film]!.id}/thumbnail.webp?time=${f.start.toFixed(2)}&width=640`;
-    let sharp = sharpFrames.get(url);
-    const apply = () => {
-      if (lensKey !== key || !sharp?.naturalWidth) return;
-      glass.setFrame(sharp, 0, 0, sharp.naturalWidth, sharp.naturalHeight);
-      drawGlass();
-    };
-    if (sharp?.complete) return apply();
-    if (!sharp) {
-      sharp = new Image();
-      sharp.crossOrigin = 'anonymous';
-      sharp.decoding = 'async';
-      sharp.src = url;
-      sharpFrames.set(url, sharp);
-    }
-    sharp.addEventListener('load', apply, { once: true });
-  }, 220);
-}
-
-function pointAt(x: number): void {
-  lensTarget = clamp(x, 0, view.clientWidth);
-  if (!lens.hasAttribute('data-on')) lensX = lensTarget;
-  lens.dataset.on = '';
-  if (!lensRaf) lensRaf = requestAnimationFrame(moveLens);
-}
-
-const still = () => {
-  const s1 = toSpectrum(progress);
-  return (s1 === 0 || (s1 === 1 && toPlayer(progress) === 0)) && progress < 0.9;
-};
-
-canvas.addEventListener('pointermove', (e) => {
-  lastTouch = performance.now();
-  if (!still()) return;
-  const x = e.clientX - view.getBoundingClientRect().left;
-  pointAt(x);
-  const film = toSpectrum(progress) === 0 ? (hit(x)?.film ?? -1) : -1;
-  if (film !== hoverFilm) {
-    hoverFilm = film;
-    requestDraw();
-  }
-});
-canvas.addEventListener('pointerleave', () => {
-  lastTouch = performance.now();
-  lens.removeAttribute('data-on');
-  hoverFilm = -1;
-  requestDraw();
-});
-canvas.addEventListener('click', (e) => {
-  if (!still()) return;
-  const h = hit(e.clientX - view.getBoundingClientRect().left);
-  const model = h && filmModels[h.film];
-  if (!h || !model) return;
-  hoverFilm = -1;
-  const switching = FILMS[h.film] !== current;
-  if (switching) select(FILMS[h.film]!);
-  watchFrom(model.frames[h.frame]!.start, switching);
-});
-
-// Until someone points at the films, the lens wanders through all four on its own.
-const IDLE_AFTER_MS = 3500;
-let lastTouch = -Infinity;
-let idleRaf = 0;
-let idleStart = 0;
-function idle(now: number): void {
-  idleRaf = 0;
-  if (calm() || progress > 0.01 || document.hidden || !columns.length) return;
-  idleRaf = requestAnimationFrame(idle);
-  if (now - lastTouch < IDLE_AFTER_MS) return;
-  if (!idleStart) idleStart = now;
-  const t = (now - idleStart) / 1000;
-  const p = 0.5 - 0.42 * Math.cos(t * 0.16) + 0.04 * Math.sin(t * 0.47);
-  pointAt(p * view.clientWidth);
-}
-function startIdle(): void {
-  if (!idleRaf) idleRaf = requestAnimationFrame(idle);
-}
-document.addEventListener('visibilitychange', startIdle);
-
-// ---------------------------------------------------------------- Landing: the poster folds into the timeline
-
-let pending: (() => void) | null = null;
-let pendingTimer = 0;
-let autoplayed = false;
-let userPaused = false;
-let ourPause = false;
-
-function runPending(): void {
-  const run = pending;
-  pending = null;
-  window.clearTimeout(pendingTimer);
-  run?.();
-}
-
-// ---------------------------------------------------------------- Smooth scroll (Lenis, MIT)
-
-// Inertial scrolling, so the three acts glide rather than step, with gentle stops at each act. Off with reduced motion,
-// where the page scrolls natively and the CSS stops apply instead.
-let lenis: Lenis | null = null;
-let snap: Snap | null = null;
-function lenisFrame(time: number): void {
-  if (!lenis) return;
-  lenis.raf(time);
-  requestAnimationFrame(lenisFrame);
-}
-function placeSnaps(): void {
-  if (!lenis) return;
-  snap?.destroy();
-  snap = new Snap(lenis, { type: 'proximity', distanceThreshold: '28%', duration: 0.9, debounce: 260 });
-  const top = stage.getBoundingClientRect().top + window.scrollY;
-  for (const at of [0, SPECTRUM_AT, 1]) snap.add(Math.round(top + travel() * at));
-}
-function setSmooth(): void {
-  const want = !calm();
-  if (want && !lenis) {
-    lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 0.9, anchors: false });
-    placeSnaps();
-    requestAnimationFrame(lenisFrame);
-  } else if (!want && lenis) {
-    snap?.destroy();
-    snap = null;
-    lenis.destroy();
-    lenis = null;
-  }
-}
-
-/** Scroll to where the frames land in the player. */
-function goToPlayer(instant = false): void {
-  if (lenis && !instant) {
-    lenis.scrollTo(stageEnd(), { duration: 1.8, easing: (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2) });
-  } else if (lenis) {
-    lenis.scrollTo(stageEnd(), { immediate: true, force: true });
-  } else {
-    window.scrollTo({ top: stageEnd(), behavior: 'auto' });
-  }
-  requestDraw();
-}
-
-/** A click on a moment: land, then play from there with sound. */
-function watchFrom(time: number, newSource = false): void {
-  const m = media();
-  if (!m) return;
-  const at = Math.max(0, time - 0.5);
-  const seek = () => {
-    if (Math.abs(m.currentTime - at) > 1) m.currentTime = at;
-  };
-  // A just-switched film still reports the old source as ready, so wait for the new one.
-  if (m.readyState >= 1 && !newSource) seek();
-  else {
-    m.addEventListener('loadedmetadata', seek, { once: true });
-    m.addEventListener('canplay', seek, { once: true });
-  }
-  pending = () => {
-    m.muted = false;
-    void m.play().catch(() => undefined);
-  };
-  pendingTimer = window.setTimeout(runPending, 2600);
-  goToPlayer();
-}
-
-function landed(): void {
-  if (pending) return runPending();
-  const m = media();
-  // Arriving by scroll starts the film muted, so the poster folds into the timeline the moment the frames land.
-  if (!m || calm() || autoplayed || userPaused || !m.paused) return;
-  autoplayed = true;
-  m.muted = true;
-  void m.play().catch(() => undefined);
-}
-
-function leftPlayer(): void {
-  const m = media();
-  if (m && autoplayed && m.muted && !m.paused) {
-    ourPause = true;
-    m.pause();
-  }
-  autoplayed = false;
-}
-
-// A pause from the viewer, not from leaving the player, stops the muted start for good.
-player.addEventListener(
-  'pause',
-  () => {
-    if (!ourPause && progress > 0.9) userPaused = true;
-    ourPause = false;
-  },
-  true
-);
-
-// Keyboard users who tab into the player while the frames still cover it are taken to it.
-pin.addEventListener('focusin', (e) => {
-  if (progress < 0.99 && !(e.target as Element).closest('.stage-view')) goToPlayer(true);
-});
-for (const a of document.querySelectorAll<HTMLAnchorElement>('a[href="#watch"]')) {
-  a.addEventListener('click', (e) => {
-    e.preventDefault();
-    goToPlayer();
-  });
-}
-// The hero's Watch: the whole title sequence in one press, landing on the film playing with sound.
-$('.hero-watch').addEventListener('click', (e) => {
-  watchFrom(0);
-  // From the keyboard (a click with no pointer), focus follows into the player so the next key works the controls.
-  if (e.detail === 0) window.setTimeout(() => player.querySelector<HTMLElement>('.tint-play')?.focus({ preventScroll: true }), 1900);
-});
-$('.skip').addEventListener('click', (e) => {
-  e.preventDefault();
-  goToPlayer(true);
-  player.querySelector<HTMLElement>('[tabindex]')?.focus({ preventScroll: true });
-});
-
 // ---------------------------------------------------------------- The four films, under the player
 
 interface Pick {
   film: Film;
   button: HTMLButtonElement;
-  /** The fingerprint band, where the stage's frames land. */
-  canvas: HTMLCanvasElement;
+  band: HTMLCanvasElement;
   art: HTMLCanvasElement;
   shown: number;
 }
+
+// A small title card per film, like a streaming shelf: a real still from the film, its name and facts, and its
+// fingerprint as a thin band along the bottom. Point along a card to riffle through that film; the one playing shows
+// where you are on its band.
 const pickEls: Pick[] = FILMS.map((film) => {
-  // A small title card per film, like a streaming shelf: a real still from the film, its name and facts, and its
-  // fingerprint as a thin band along the bottom (where the stage's frames land). Point along a card to riffle through
-  // that film; the one playing shows where you are on its band.
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'pick';
@@ -685,10 +148,9 @@ const pickEls: Pick[] = FILMS.map((film) => {
   b.setAttribute('aria-label', `${film.title}, ${film.year}. ${film.line}`);
   b.addEventListener('click', () => select(film));
   $('.films-pick').append(b);
-  const pick: Pick = { film, button: b, canvas: b.querySelector<HTMLCanvasElement>('.pick-band canvas')!, art: b.querySelector<HTMLCanvasElement>('.pick-art')!, shown: -1 };
+  const pick: Pick = { film, button: b, band: b.querySelector<HTMLCanvasElement>('.pick-band canvas')!, art: b.querySelector<HTMLCanvasElement>('.pick-art')!, shown: -1 };
   b.addEventListener('pointermove', (e) => {
-    const i = FILMS.indexOf(film);
-    const model = filmModels[i];
+    const model = filmModels[FILMS.indexOf(film)];
     if (e.pointerType === 'touch' || !model || model.status !== 'ready') return;
     const r = b.getBoundingClientRect();
     paintArt(pick, model, clamp(Math.floor(((e.clientX - r.left) / r.width) * model.frames.length), 0, model.frames.length - 1));
@@ -700,6 +162,14 @@ const pickEls: Pick[] = FILMS.map((film) => {
   return pick;
 });
 const currentIndex = () => FILMS.indexOf(current);
+
+/** Draw an image into a box, cropped to the box's shape from the middle. */
+function cover(g: CanvasRenderingContext2D, src: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, x: number, y: number, w: number, h: number): void {
+  const a = w / h;
+  const cw = sw / sh > a ? sh * a : sw;
+  const ch = sw / sh > a ? sh : sw / a;
+  g.drawImage(src, sx + (sw - cw) / 2, sy + (sh - ch) / 2, cw, ch, x, y, w, h);
+}
 
 /** A frame into a card: the sharp still when it has arrived (and asked for when it hasn't), the storyboard tile till then. */
 function paintArt(pick: Pick, model: TintModel, index: number): void {
@@ -718,30 +188,25 @@ function paintArt(pick: Pick, model: TintModel, index: number): void {
   }
   const g = pick.art.getContext('2d')!;
   g.imageSmoothingQuality = 'high';
-  // Cover: the middle of the picture, cropped to the card's shape.
-  const [src, sx, sy, sw, sh] = sharp ? [sharp, 0, 0, sharp.naturalWidth, sharp.naturalHeight] as const : [tile, f.x, f.y, f.w, f.h] as const;
-  const a = s.w / s.h;
-  const cw = sw / sh > a ? sh * a : sw;
-  const ch = sw / sh > a ? sh : sw / a;
-  g.drawImage(src, sx + (sw - cw) / 2, sy + (sh - ch) / 2, cw, ch, 0, 0, s.w, s.h);
+  if (sharp) cover(g, sharp, 0, 0, sharp.naturalWidth, sharp.naturalHeight, 0, 0, s.w, s.h);
+  else cover(g, tile, f.x, f.y, f.w, f.h, 0, 0, s.w, s.h);
 }
 
 function paintPicks(): void {
   pickEls.forEach((pick, i) => {
     const model = filmModels[i];
     if (!model || model.status !== 'ready') return;
-    const s = sizeOf(pick.canvas);
-    draw(pick.canvas, model.print(s.w, s.h, LIT));
+    const s = sizeOf(pick.band);
+    draw(pick.band, model.print(s.w, s.h, LIT));
     if (!pick.button.matches(':hover')) paintArt(pick, model, model.keyArt());
-    pick.button.querySelector('small')!.textContent = `${pick.film.year} · ${formatTime(Math.floor(model.duration))}`;
+    pick.button.querySelector('small')!.textContent = `${pick.film.year} · ${formatTime(model.duration)}`;
     // The sharp still replaces the tile when it lands.
     if (!pick.art.dataset.listening) {
       pick.art.dataset.listening = '';
       model.addEventListener('sharp', () => {
-        if (pick.shown >= 0) {
-          delete pick.art.dataset.key;
-          paintArt(pick, model, pick.shown);
-        }
+        if (pick.shown < 0) return;
+        delete pick.art.dataset.key;
+        paintArt(pick, model, pick.shown);
       });
     }
   });
@@ -762,13 +227,11 @@ function syncChoice(): void {
   for (const p of pickEls) p.button.setAttribute('aria-pressed', String(p.film === current));
   $('.credit-title').textContent = current.title;
   $('.credit-year').textContent = String(current.year);
-  $('.hero-watch-title').textContent = current.title;
   const model = filmModels[currentIndex()];
-  // Whole seconds down, as the player's own clock shows it.
-  $('.hero-watch-time').textContent = model?.duration ? formatTime(Math.floor(model.duration)) : '';
   if (model?.status === 'ready') {
     const stops = model.scenes.map((s) => accent(model, s.face));
     if (stops.length > 1) document.documentElement.style.setProperty('--film-swatch', `conic-gradient(${[...stops, stops[0]].join(', ')})`);
+    document.documentElement.style.setProperty('--film-accent', accent(model, model.signature()));
     bar.style.setProperty('--bar-chip', accent(model, model.signature()));
     paintLights();
   }
@@ -779,68 +242,200 @@ function select(film: Film): void {
   current = film;
   const m = media();
   if (m) {
-    ourPause = true;
     m.pause();
     m.muted = false;
   }
-  autoplayed = false;
-  userPaused = false;
   player.setAttribute('content-title', film.title);
   fillTitleCard(film);
   m?.setAttribute('src', `https://stream.mux.com/${film.id}.m3u8`);
   syncChoice();
-  void paintSteps(film);
-  requestDraw();
+  story.reset();
 }
 
-// ---------------------------------------------------------------- How it works, drawn from the current film
+// ---------------------------------------------------------------- How it works: the film tells it as you scroll
 
-async function paintSteps(film: Film): Promise<void> {
-  const model = await modelFor(film);
-  if (film !== current || model.status !== 'ready') return;
+/**
+ * One canvas, pinned while its section scrolls past, in three steps:
+ *   1. the storyboard, every frame of the film laid out as a sheet;
+ *   2. each frame squeezes into a stripe, and the stripes close up into the fingerprint;
+ *   3. the fingerprint narrows into the timeline under the film's picture, and as the playhead moves along it the
+ *      colour under the playhead tints the time and the light around the picture.
+ * With reduced motion it holds each step instead of moving between them.
+ */
+const story = (() => {
+  const section = $('.how-track');
+  const pin = $('.how-pin');
+  const canvas = $<HTMLCanvasElement>('.how-canvas');
+  const steps = [...document.querySelectorAll<HTMLElement>('.how-step')];
+  const g = canvas.getContext('2d')!;
+  let raf = 0;
+  let model: TintModel | null = null;
+  let film: Film | null = null;
 
-  $<HTMLImageElement>('.step-storyboard img').src = model.frames[0]!.url;
-  $('.step-frames').textContent = String(model.frames.length);
-  $('.step-scenes').textContent = String(model.scenes.length);
+  type Box = { x: number; y: number; w: number; h: number };
+  const mix = (a: Box, b: Box, t: number): Box => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), w: lerp(a.w, b.w, t), h: lerp(a.h, b.h, t) });
 
-  // One bright, colourful frame cut into strips, each strip squeezed to a single line of colour.
-  const slits = $<HTMLCanvasElement>('.step-slits');
-  const { w, h } = sizeOf(slits);
-  slits.width = w;
-  slits.height = h;
-  const g = slits.getContext('2d')!;
-  const f = model.frames.reduce((best, fr) => (fr.chroma * fr.lab[0] > best.chroma * best.lab[0] ? fr : best), model.frames[0]!);
-  const img = model.image(f.url);
-  if (img) {
-    const K = 12;
-    const frameW = w * 0.6;
-    const frameH = Math.min(h * 0.9, (frameW * f.h) / f.w);
-    const top = (h - frameH) / 2;
-    g.drawImage(img, f.x, f.y, f.w, f.h, 0, top, frameW, frameH);
-    g.fillStyle = 'rgba(0,0,0,0.9)';
-    for (let k = 1; k < K; k++) g.fillRect(Math.round((k * frameW) / K), top, Math.max(1, dpr()), frameH);
-    const column = document.createElement('canvas');
-    column.width = 1;
-    column.height = Math.round(frameH);
-    const cg = column.getContext('2d')!;
-    const gap = w * 0.006;
-    const barsX = w * 0.68;
-    const barW = (w - barsX - gap * (K - 1)) / K;
-    g.imageSmoothingEnabled = false;
-    for (let k = 0; k < K; k++) {
-      cg.clearRect(0, 0, 1, column.height);
-      cg.drawImage(img, f.x + (k * f.w) / K, f.y, f.w / K, f.h, 0, 0, 1, column.height);
-      g.drawImage(column, barsX + k * (barW + gap), top, barW, frameH);
+  function progress(): number {
+    const r = section.getBoundingClientRect();
+    const travel = Math.max(1, r.height - pin.offsetHeight);
+    const p = clamp((bar.offsetHeight - r.top) / travel, 0, 1);
+    // Calm: hold each step, no motion between them.
+    return calm() ? (p < 0.36 ? 0 : p < 0.7 ? 0.62 : 1) : p;
+  }
+
+  function render(): void {
+    raf = 0;
+    const p = progress();
+    const step = p < 0.36 ? 0 : p < 0.7 ? 1 : 2;
+    steps.forEach((el, i) => el.toggleAttribute('data-on', i === step));
+    if (!model || model.status !== 'ready') return;
+    const W = canvas.clientWidth;
+    const H = canvas.clientHeight;
+    const k = dpr();
+    if (canvas.width !== Math.round(W * k) || canvas.height !== Math.round(H * k)) {
+      canvas.width = Math.round(W * k);
+      canvas.height = Math.round(H * k);
+    }
+    g.setTransform(k, 0, 0, k, 0, 0);
+    g.clearRect(0, 0, W, H);
+    g.imageSmoothingQuality = 'high';
+
+    const frames = model.frames;
+    const N = frames.length;
+    const f0 = frames[0]!;
+    const aspect = f0.w / f0.h || 16 / 9;
+    // The picture's area: to the right of the words on a wide screen, under them on a narrow one.
+    const wide = W >= 900;
+    const pad = clamp(W * 0.04, 16, 56);
+    const A: Box = wide ? { x: W * 0.4, y: pad * 1.5, w: W * 0.6 - pad, h: H - pad * 3 } : { x: pad, y: H * 0.42, w: W - 2 * pad, h: H * 0.54 };
+
+    // Step 1: the sheet.
+    let cols = 1;
+    const fit = (c: number) => Math.min(A.w / c, (A.h / Math.ceil(N / c)) * aspect);
+    for (let c = 2; c <= N; c++) if (fit(c) > fit(cols)) cols = c;
+    const gap = Math.max(2, A.w * 0.006);
+    const rows = Math.ceil(N / cols);
+    const tw = (Math.min(A.w, fit(cols) * cols) - gap * (cols - 1)) / cols;
+    const th = tw / aspect;
+    const gx = A.x + (A.w - (cols * tw + (cols - 1) * gap)) / 2;
+    const gy = A.y + (A.h - (rows * th + (rows - 1) * gap)) / 2;
+    const tile = (i: number): Box => ({ x: gx + (i % cols) * (tw + gap), y: gy + Math.floor(i / cols) * (th + gap), w: tw, h: th });
+
+    // Step 2: the fingerprint, as tall as a picture, across the area.
+    const bandH = Math.min(A.h * 0.62, (A.w / aspect) * 0.9);
+    const band: Box = { x: A.x, y: A.y + (A.h - bandH) / 2, w: A.w, h: bandH };
+    const stripe = (i: number): Box => ({ x: band.x + (i * band.w) / N, y: band.y, w: band.w / N + 0.4, h: band.h });
+
+    // Step 3: the player: the picture, with the fingerprint as its timeline under it.
+    const picW = Math.min(A.w, (A.h - 40) * aspect);
+    const picH = picW / aspect;
+    const pic: Box = { x: A.x + (A.w - picW) / 2, y: A.y + (A.h - picH - 34) / 2, w: picW, h: picH };
+    const strip: Box = { x: pic.x + picW * 0.04, y: pic.y + picH - 30, w: picW * 0.92, h: 10 };
+    const slot = (i: number): Box => ({ x: strip.x + (i * strip.w) / N, y: strip.y, w: strip.w / N + 0.4, h: strip.h });
+
+    const toBand = p; // 0..1 across the page; each transition below picks its own stretch of it
+    const squeeze = (i: number) => easeInOut(clamp((toBand - 0.22 - (i / N) * 0.12) / 0.2, 0, 1));
+    const narrow = easeInOut(clamp((p - 0.66) / 0.16, 0, 1));
+    // Where the playhead is along the film, in step 3.
+    const u = lerp(0.12, 0.82, smooth(0.8, 1, p));
+    const playing = model.frameAt(u * model.duration);
+
+    // The picture fades up behind the timeline as the band narrows.
+    if (narrow > 0) {
+      const glow = g.createRadialGradient(pic.x + pic.w * u, pic.y + pic.h, 0, pic.x + pic.w / 2, pic.y + pic.h / 2, pic.w * 0.75);
+      glow.addColorStop(0, accent(model, playing).replace(')', ` / ${0.35 * narrow})`));
+      glow.addColorStop(1, 'transparent');
+      g.fillStyle = glow;
+      g.fillRect(0, 0, W, H);
+      g.save();
+      g.globalAlpha = narrow;
+      g.beginPath();
+      g.roundRect(pic.x, pic.y, pic.w, pic.h, 14);
+      g.clip();
+      g.fillStyle = '#000';
+      g.fillRect(pic.x, pic.y, pic.w, pic.h);
+      const f = frames[playing]!;
+      const sharp = model.sharp(playing, pic.w * k);
+      if (sharp) cover(g, sharp, 0, 0, sharp.naturalWidth, sharp.naturalHeight, pic.x, pic.y, pic.w, pic.h);
+      else {
+        const img = model.image(f.url);
+        if (img) cover(g, img, f.x, f.y, f.w, f.h, pic.x, pic.y, pic.w, pic.h);
+      }
+      // Shade for the timeline, as in the skin.
+      const shade = g.createLinearGradient(0, pic.y + pic.h * 0.55, 0, pic.y + pic.h);
+      shade.addColorStop(0, 'transparent');
+      shade.addColorStop(1, 'rgb(0 0 0 / 0.7)');
+      g.fillStyle = shade;
+      g.fillRect(pic.x, pic.y, pic.w, pic.h);
+      g.restore();
+    }
+
+    // The frames: tiles, then stripes, then the timeline.
+    for (let i = 0; i < N; i++) {
+      const f = frames[i]!;
+      const img = model.image(f.url);
+      if (!img) continue;
+      const s = squeeze(i);
+      let box = mix(tile(i), stripe(i), s);
+      box = mix(box, slot(i), narrow);
+      // As a stripe the whole frame squeezes to its width, which is what the fingerprint is made of.
+      g.save();
+      g.globalAlpha = narrow > 0 && f.start > u * model.duration ? lerp(1, 0.55, narrow) : 1;
+      const r = lerp(Math.min(5, tw * 0.06), 0, s);
+      g.beginPath();
+      g.roundRect(box.x, box.y, box.w, box.h, r);
+      g.clip();
+      if (s < 1) cover(g, img, f.x, f.y, f.w, f.h, box.x, box.y, box.w, box.h);
+      else g.drawImage(img, f.x, f.y, f.w, f.h, box.x, box.y, box.w, box.h);
+      g.restore();
+    }
+
+    // Step 3: the playhead, in the colour of the frame under it.
+    if (narrow > 0.6) {
+      const a = clamp((narrow - 0.6) / 0.4, 0, 1);
+      const x = strip.x + strip.w * u;
+      const label = formatTime(u * model.duration);
+      g.globalAlpha = a;
+      g.font = `700 12px ${getComputedStyle(document.body).fontFamily}`;
+      const lw = g.measureText(label).width + 18;
+      g.fillStyle = accent(model, playing);
+      g.beginPath();
+      g.roundRect(x - lw / 2, strip.y + strip.h / 2 - 11, lw, 22, 11);
+      g.fill();
+      g.fillStyle = 'rgb(16 16 18)';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(label, x, strip.y + strip.h / 2 + 0.5);
+      g.textAlign = 'start';
+      g.globalAlpha = 1;
     }
   }
 
-  const printCanvas = $<HTMLCanvasElement>('.step-print');
-  const size = sizeOf(printCanvas);
-  draw(printCanvas, model.print(size.w, size.h, LIT));
-  const pg = printCanvas.getContext('2d')!;
-  pg.fillStyle = 'rgba(0,0,0,0.95)';
-  for (const scene of model.scenes.slice(1)) pg.fillRect(Math.round((scene.start / model.duration) * size.w) - dpr(), 0, 2 * dpr(), size.h);
-}
+  function request(): void {
+    if (!raf) raf = requestAnimationFrame(render);
+  }
+
+  async function load(): Promise<void> {
+    const want = current;
+    const m = await modelFor(want);
+    if (want !== current) return;
+    film = want;
+    model = m;
+    $('.how-frames').textContent = String(m.frames.length);
+    m.addEventListener('sharp', request);
+    request();
+  }
+
+  window.addEventListener('scroll', request, { passive: true });
+  new ResizeObserver(request).observe(canvas);
+  return {
+    request,
+    reset: () => {
+      if (film !== current) void load();
+    },
+    load,
+  };
+})();
 
 // ---------------------------------------------------------------- Test the player
 
@@ -887,6 +482,19 @@ panel.addEventListener('toggle', (event) => {
 window.addEventListener('scroll', () => !sheet.matches && panel.matches(':popover-open') && panel.hidePopover(), { passive: true });
 opener.setAttribute('aria-expanded', 'false');
 
+// "Made for everyone" sends you to the real player, with the panel open on it.
+$('.access-open').addEventListener('click', () => {
+  const open = () => {
+    opener.focus({ preventScroll: true });
+    panel.showPopover();
+  };
+  if (lenis && !calm()) lenis.scrollTo(0, { duration: 1.1, onComplete: open });
+  else {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    requestAnimationFrame(open);
+  }
+});
+
 const form = $<HTMLFormElement>('.console');
 form.addEventListener('change', (event) => {
   const input = event.target as HTMLInputElement;
@@ -907,7 +515,7 @@ form.addEventListener('change', (event) => {
       if (on) root.dataset.tintMotion = 'reduce';
       else delete root.dataset.tintMotion;
       setSmooth();
-      requestDraw();
+      story.request();
       break;
     case 'contrast':
       if (on) frame.dataset.tintContrast = 'more';
@@ -999,7 +607,6 @@ lights.addEventListener('click', () => {
   if (calm() || !doc.startViewTransition) return setPage(theme);
   // The new page spreads out from the marble, as if the light came from the switch.
   const r = lightsKnob.getBoundingClientRect();
-  // From where the marble comes to rest.
   const travelX = lights.offsetWidth - r.width - 2 * (r.top - lights.getBoundingClientRect().top);
   const x = r.left + r.width / 2 + (up ? 1 - lightsAt : -lightsAt) * travelX;
   const y = r.top + r.height / 2;
@@ -1013,19 +620,43 @@ lights.addEventListener('click', () => {
   });
 });
 
+// ---------------------------------------------------------------- Smooth scroll (Lenis, MIT); off with reduced motion
 
+let lenis: Lenis | null = null;
+function lenisFrame(time: number): void {
+  if (!lenis) return;
+  lenis.raf(time);
+  requestAnimationFrame(lenisFrame);
+}
+function setSmooth(): void {
+  const want = !calm();
+  if (want && !lenis) {
+    lenis = new Lenis({ lerp: 0.1, wheelMultiplier: 0.95, anchors: true });
+    requestAnimationFrame(lenisFrame);
+  } else if (!want && lenis) {
+    lenis.destroy();
+    lenis = null;
+  }
+}
 
-// ---------------------------------------------------------------- The bar marks the section you are reading
+$('.skip').addEventListener('click', (e) => {
+  e.preventDefault();
+  window.scrollTo({ top: 0 });
+  player.querySelector<HTMLElement>('.tint-start, [tabindex]')?.focus({ preventScroll: true });
+});
+
+// ---------------------------------------------------------------- The bar: solid once the page moves, and the section you are in
 
 const barLinks = [...document.querySelectorAll<HTMLAnchorElement>('.bar-links a[data-section]')];
 const sections: [string, HTMLElement][] = [
+  ['watch', $('#watch')],
   ['how', $('#how')],
-  ['care', $('#care')],
   ['install', $('#install')],
 ];
 function markSection(): void {
+  bar.toggleAttribute('data-solid', window.scrollY > 4);
   const mid = window.innerHeight / 2;
-  let id: string | null = progress > 0.9 && stage.getBoundingClientRect().bottom > mid ? 'watch' : null;
+  let id: string | null = null;
   for (const [name, el] of sections) {
     const r = el.getBoundingClientRect();
     if (r.top <= mid && r.bottom > mid) id = name;
@@ -1035,6 +666,7 @@ function markSection(): void {
     else a.removeAttribute('aria-current');
   }
 }
+window.addEventListener('scroll', markSection, { passive: true });
 
 // ---------------------------------------------------------------- Copy the snippet
 
@@ -1052,28 +684,26 @@ copyButton.addEventListener('click', async () => {
 // ---------------------------------------------------------------- Start
 
 syncChoice();
+markSection();
 FILMS.forEach((film, i) => {
   void modelFor(film).then((model) => {
     filmModels[i] = model;
     if (film === current) {
       syncChoice();
-      void paintSteps(film);
+      void story.load();
     }
     paintPicks();
-    buildColumns();
   });
 });
-render();
 
 setSmooth();
 matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', setSmooth);
 
 let lastWidth = 0;
 new ResizeObserver(() => {
-  placeSnaps();
-  if (view.clientWidth === lastWidth) return;
-  lastWidth = view.clientWidth;
+  if (document.documentElement.clientWidth === lastWidth) return;
+  lastWidth = document.documentElement.clientWidth;
   paintPicks();
   paintLights();
-  void paintSteps(current);
-}).observe(view);
+  story.request();
+}).observe(document.documentElement);

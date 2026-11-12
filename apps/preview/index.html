@@ -20,128 +20,75 @@
     <header class="bar">
       <a class="bar-mark" href="#top" aria-label="Tint, back to the top"><span class="bar-chip" aria-hidden="true"></span>Tint</a>
       <nav class="bar-links" aria-label="Sections">
-        <a href="#watch" data-section="watch">Watch</a>
+        <a href="#top" data-section="watch">Watch</a>
         <a href="#how" data-section="how">How it works</a>
-        <a href="#care" data-section="care">Access</a>
         <a href="#install" data-section="install">Use it</a>
         <a href="https://github.com/Kairopi/VIDEOJS">GitHub</a>
       </nav>
+      <!-- House lights: down for a dark page, up for a light one. A glass marble rolls over the film's fingerprint. -->
+      <button class="lights" type="button" role="switch" aria-checked="false" aria-label="House lights">
+        <span class="lights-track" aria-hidden="true"><canvas class="lights-print"></canvas></span>
+        <span class="lights-knob" aria-hidden="true"><canvas class="lights-glass"></canvas></span>
+      </button>
     </header>
 
     <main id="top">
+      <!-- The product first: the player on its title page, and the four films under it. -->
+      <section class="watch" id="watch" aria-labelledby="mark">
+        <div class="watch-head">
+          <h1 class="mark" id="mark">Tint</h1>
+          <p class="hero-line">A Video.js skin that wears the colours of the film it plays.</p>
+        </div>
+        <div class="player-frame">
+          <div class="player" id="player"></div>
+        </div>
+        <div class="shelf">
+          <div class="films-pick" role="group" aria-label="Choose a film"></div>
+          <button class="test-open" type="button" popovertarget="test-panel">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
+            Test the player
+          </button>
+          <p class="credit"><span class="credit-title"></span> by <a href="https://studio.blender.org/films/">Blender Studio</a>, <span class="credit-year"></span>. <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Streamed by Mux.</p>
+        </div>
+      </section>
+
       <!--
-        The stage, one pinned screen. Every column on the canvas is one real storyboard frame.
-        Act 1: four films side by side. Act 2: every frame sorted by colour into one spectrum.
-        Act 3: the frames fly back into the player and the four film buttons, and the poster folds into the timeline.
+        How it works, told by the film itself as you scroll: the storyboard, its frames squeezed into the fingerprint,
+        and the fingerprint becoming the player's timeline while the colour under the playhead tints it.
       -->
-      <section class="stage" id="watch" aria-labelledby="mark">
-        <span class="snap snap-films" aria-hidden="true"></span>
-        <span class="snap snap-spectrum" aria-hidden="true"></span>
-        <span class="snap snap-player" aria-hidden="true"></span>
-        <div class="stage-pin">
-          <div class="player-frame">
-            <div class="player" id="player"></div>
-          </div>
-          <div class="shelf">
-            <div class="films-pick" role="group" aria-label="Choose a film"></div>
-            <p class="credit"><span class="credit-title"></span> by <a href="https://studio.blender.org/films/">Blender Studio</a>, <span class="credit-year"></span>. <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Streamed by Mux.</p>
-            <div class="shelf-tools">
-              <!-- House lights: down for a dark page, up for a light one. A glass marble rolls over the film's fingerprint. -->
-              <button class="lights" type="button" role="switch" aria-checked="false" aria-label="House lights">
-                <span class="lights-track" aria-hidden="true"><canvas class="lights-print"></canvas></span>
-                <span class="lights-knob" aria-hidden="true"><canvas class="lights-glass"></canvas></span>
-              </button>
-              <button class="test-open" type="button" popovertarget="test-panel">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
-                Test the player
-              </button>
-            </div>
-          </div>
-
-          <div class="stage-view">
-            <div class="sv-back" aria-hidden="true"></div>
-            <canvas class="sv-canvas" aria-hidden="true"></canvas>
-            <div class="sv-shade" aria-hidden="true"></div>
-            <div class="sv-titles" aria-hidden="true"></div>
-            <div class="sv-lens" aria-hidden="true">
-              <span class="sv-lens-line"></span>
-              <span class="sv-lens-card">
-                <span class="sv-glass"><canvas class="sv-glass-canvas"></canvas></span>
-                <span class="sv-lens-frame"></span>
-                <span class="sv-lens-meta"><span class="sv-lens-name"></span><span class="sv-lens-time"></span></span>
-              </span>
-            </div>
-            <div class="sv-copy">
-              <h1 class="mark" id="mark">Tint</h1>
-              <p class="hero-line">A Video.js player that wears the film's colours.</p>
-              <!-- One press plays the whole title sequence: the frames fly into the player, and the film starts. -->
-              <button class="hero-watch" type="button">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.75 5.6v12.8a1 1 0 0 0 1.53.85l10.1-6.4a1 1 0 0 0 0-1.7l-10.1-6.4A1 1 0 0 0 8.75 5.6Z" /></svg>
-                <span>Watch <span class="hero-watch-title">Sprite Fright</span></span>
-                <span class="hero-watch-time"></span>
-              </button>
-            </div>
-            <div class="sv-caption">
-              <h2>Four films. One spectrum.</h2>
-              <p>Every frame, sorted by colour. Point at a colour to watch that moment.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section class="how" id="how" aria-labelledby="how-title">
-        <div class="section-head">
-          <h2 id="how-title">One image becomes the whole interface.</h2>
-          <p>Tint reads the storyboard that Mux already makes for timeline previews. It never samples the playing video, so it costs nothing per frame.</p>
+        <div class="how-track">
+        <div class="how-pin">
+          <canvas class="how-canvas" aria-hidden="true"></canvas>
+          <div class="how-copy">
+            <h2 class="how-kicker" id="how-title">How it works</h2>
+            <ol class="how-steps">
+              <li class="how-step" data-step="0"><strong>One storyboard.</strong> Mux makes one for every video, for timeline previews: <span class="how-frames"></span> frames from across the film.</li>
+              <li class="how-step" data-step="1"><strong>One fingerprint.</strong> Tint squeezes each frame into a stripe. In order, the stripes tell the film's colour story.</li>
+              <li class="how-step" data-step="2"><strong>One player.</strong> The fingerprint becomes the timeline, and the colour under the playhead tints the controls.</li>
+            </ol>
+          </div>
         </div>
-        <ol class="steps">
-          <li class="step">
-            <figure>
-              <div class="step-visual step-storyboard"><img alt="The film's storyboard: a grid of frames" crossorigin="anonymous" decoding="async" /></div>
-              <figcaption><strong>The storyboard.</strong> <span class="step-frames"></span> frames from across the film, in one image.</figcaption>
-            </figure>
-          </li>
-          <li class="step">
-            <figure>
-              <div class="step-visual"><canvas class="step-slits" aria-hidden="true"></canvas></div>
-              <figcaption><strong>Slit by slit.</strong> Each frame is cut into thin strips, and each strip is squeezed to a line of colour.</figcaption>
-            </figure>
-          </li>
-          <li class="step">
-            <figure>
-              <div class="step-visual"><canvas class="step-print" aria-hidden="true"></canvas></div>
-              <figcaption><strong>The fingerprint.</strong> In order, the lines tell the film's colour story. Big jumps in colour mark its <span class="step-scenes"></span> scenes, and each scene's colour tints the controls.</figcaption>
-            </figure>
-          </li>
-        </ol>
+        </div>
+        <p class="how-note">Nothing samples the playing video, so the colour costs nothing per frame. After Brendan Dawes's <a href="https://brendandawes.com/projects/cinemaredux">Cinema Redux</a>, Frederic Brodbeck's <a href="https://github.com/freder/cinemetrics">Cinemetrics</a>, and a century of slit-scan photography.</p>
       </section>
 
-      <section class="care" id="care" aria-labelledby="care-title">
-        <div class="section-head">
-          <h2 id="care-title">Made to work for everyone.</h2>
-          <p>Every claim here can be checked with Test the player, under the player.</p>
-        </div>
-        <dl class="care-list">
-          <div><dt>Keyboard</dt><dd>Every control is reachable, menus close with Escape, and [ and ] jump between scenes.</dd></div>
-          <div><dt>Focus you can see</dt><dd>One ring everywhere: the scene colour with a dark halo, clear over any frame.</dd></div>
-          <div><dt>Readable colour</dt><dd>Scene colours are set to a lightness that reads on the controls. Text on the accent picks black or white.</dd></div>
-          <div><dt>Calm on request</dt><dd>With reduced motion, the fold, the colour easing and the loading sweep switch off.</dd></div>
-          <div><dt>Thumb-sized</dt><dd>44 px controls, bigger in fullscreen. Hover effects only where there's hover.</dd></div>
-          <div><dt>Any size, any language</dt><dd>Controls reflow at four widths and mirror for right-to-left languages.</dd></div>
-        </dl>
+      <section class="access" aria-labelledby="access-title">
+        <h2 id="access-title">Made for everyone.</h2>
+        <p>Keyboard, screen readers, reduced motion, more contrast, right-to-left and any size, from a phone to a cinema screen. Try each one on the real player.</p>
+        <button class="access-open" type="button">Test the player</button>
       </section>
 
       <section class="install" id="install" aria-labelledby="install-title">
         <div class="section-head">
           <h2 id="install-title">Use it on your site.</h2>
-          <p>Copy the skin's <code>src</code> folder into your project, then wrap any video that has a thumbnails track.</p>
+          <p>Copy the skin's <code>src</code> folder into your project and wrap any video that has a thumbnails track. Apache 2.0.</p>
         </div>
         <div class="code">
           <button class="code-copy" type="button">Copy</button>
           <pre><code>&lt;video-player content-title="Sprite Fright"&gt;
   &lt;!-- the markup from src/video/skin.html --&gt;
-  &lt;mux-video
-    src="https://stream.mux.com/PLAYBACK_ID.m3u8"
+  &lt;mux-video src="https://stream.mux.com/PLAYBACK_ID.m3u8"
     playsinline crossorigin="anonymous"&gt;&lt;/mux-video&gt;
 &lt;/video-player&gt;
 

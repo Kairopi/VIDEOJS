@@ -14,7 +14,7 @@
   --max: 1360px;
   --bar-h: 60px;
   /* Room the landed player leaves for the bar above it and the films below it. */
-  --chrome: 244px;
+  --chrome: 318px;
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
   --font: 'Mona Sans', ui-sans-serif, system-ui, sans-serif;
 }
@@ -113,34 +113,51 @@ main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline:
 .bar a { text-decoration: none; }
 .bar-mark { display: inline-flex; align-items: center; gap: 9px; font-size: 17px; font-stretch: 125%; font-weight: 820; letter-spacing: -0.02em; }
 .bar-chip { width: 14px; height: 14px; border-radius: 50%; background: var(--bar-chip, currentColor); transition: background 600ms ease; }
-.bar-links { display: flex; gap: clamp(14px, 2.2vw, 30px); font-size: 14px; font-weight: 520; }
+.bar-links { display: flex; gap: clamp(14px, 2.2vw, 30px); margin-left: auto; font-size: 14px; font-weight: 520; }
+/* The house lights, small, at the end of the bar. */
+.bar .lights { --lights-w: 58px; --lights-h: 30px; --lights-pad: 3px; }
 .bar-links a { opacity: 0.72; transition: opacity 160ms ease; }
 .bar-links a:hover, .bar-links a[aria-current='true'] { opacity: 1; }
 .bar-links a[aria-current='true'] { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 6px; }
 
-/* ---------------------------------------------------------------- The stage */
+/* ---------------------------------------------------------------- Watch: the player first */
 
-.stage { position: relative; width: 100vw; margin-left: calc(50% - 50vw); }
-/* The scroll the three acts take: films, spectrum, player. */
-.stage::after { content: ''; display: block; height: 240svh; }
-/* Gentle stops where each act is held: the films, the spectrum, the landed player. */
-html { scroll-snap-type: y proximity; }
-/* Lenis does the stops itself while it runs. */
-html.lenis { scroll-snap-type: none; }
-.snap { position: absolute; left: 0; width: 1px; height: 1px; scroll-snap-align: start; scroll-margin-top: calc(-1 * var(--bar-h)); }
-.snap-films { top: 0; }
-.snap-spectrum { top: calc(240svh * 0.48); }
-.snap-player { top: 240svh; }
-
-.stage-pin {
-  position: sticky;
-  top: 0;
+/* Full width, one screen: a line of words, the player as large as the screen allows, the four films under it. */
+.watch {
   display: grid;
   align-content: center;
   justify-items: center;
   gap: 14px;
+  width: 100vw;
   min-height: 100svh;
-  padding: calc(var(--bar-h) + 4px) var(--edge) 22px;
+  margin-left: calc(50% - 50vw);
+  padding: calc(var(--bar-h) + 10px) var(--edge) 22px;
+}
+.watch-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 32px;
+  width: 100%;
+  max-width: calc((100svh - var(--chrome)) * var(--ar, 2.39));
+  padding-inline: 4px;
+}
+.mark {
+  margin: 0;
+  font-size: clamp(34px, 3.6vw, 56px);
+  font-stretch: 125%;
+  font-weight: 860;
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+.hero-line {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: clamp(16px, 1.35vw, 20px);
+  font-weight: 480;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
 }
 
 .player-frame {
@@ -148,7 +165,7 @@ html.lenis { scroll-snap-type: none; }
   --ar: 2.39;
   --size-max: 100%;
   width: 100%;
-  /* Keeps the skin's own layers below the stage while the stage covers the player. */
+  /* Keeps the skin's own layers inside the frame. */
   isolation: isolate;
   /* As large as the screen allows, whatever the shape. */
   max-width: min(var(--size-max), calc((100svh - var(--chrome)) * var(--ar)));
@@ -164,16 +181,15 @@ html.lenis { scroll-snap-type: none; }
   box-shadow: 0 0 0 1px var(--hair), 0 50px 140px -50px rgb(0 0 0 / 0.9);
 }
 
-/* Under the player: the four films as their own fingerprints, and the test button. */
+/* Under the player: the four films, and the test button. As wide as the player. */
 .shelf {
   isolation: isolate;
   display: flex;
   gap: 10px;
   width: 100%;
-  max-width: 1600px;
+  max-width: min(var(--size-max, 100%), calc((100svh - var(--chrome)) * var(--ar, 2.39)));
   transition: opacity 240ms ease;
 }
-.stage-pin[data-covered] :is(.player-frame, .shelf) { opacity: 0; }
 .films-pick { flex: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 /* What is playing, and the credit its licence asks for. */
 .credit { order: 3; flex-basis: 100%; margin: 0; color: var(--ink-2); font-size: 13px; }
@@ -257,8 +273,8 @@ html.lenis { scroll-snap-type: none; }
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  height: 64px;
-  padding: 0 18px;
+  height: var(--pick-h, 92px);
+  padding: 0 20px;
   border: 0;
   border-radius: 14px;
   background: var(--panel);
@@ -355,148 +371,6 @@ html.lenis { scroll-snap-type: none; }
 /* Lights up or down: the new page spreads out from the switch. */
 ::view-transition-old(root),
 ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
-
-/* The view: one screen over the pinned player, drawn from real frames. */
-.stage-view { position: absolute; inset: 0 0 auto; z-index: 2; height: 100svh; pointer-events: none; color: #fff; }
-.stage-view[data-gone] { visibility: hidden; }
-.sv-back { position: absolute; inset: 0; background: #000; }
-.sv-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
-.stage-view[data-touchable] .sv-canvas { pointer-events: auto; cursor: pointer; touch-action: pan-y; }
-.sv-shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgb(0 0 0 / 0.88), rgb(0 0 0 / 0.4) 32%, transparent 60%);
-}
-
-.sv-titles span {
-  position: absolute;
-  top: calc(var(--bar-h) + 10px);
-  display: grid;
-  overflow: hidden;
-  font-size: 15px;
-  font-weight: 640;
-  line-height: 1.3;
-  white-space: nowrap;
-  text-shadow: 0 1px 10px rgb(0 0 0 / 0.8);
-  transition: opacity 200ms ease;
-}
-.sv-titles small { font-size: 13px; font-weight: 480; opacity: 0.7; }
-
-.sv-lens { position: absolute; inset: 0; opacity: 0; transition: opacity 200ms ease; }
-.sv-lens[data-on] { opacity: 1; }
-.sv-lens-line {
-  position: absolute;
-  inset-block: 0;
-  left: var(--x, 50%);
-  width: 2px;
-  translate: -50% 0;
-  background: #fff;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 0 24px 2px var(--lens-color, #fff);
-}
-.sv-lens-card {
-  position: absolute;
-  top: 38%;
-  left: var(--card-x, 50%);
-  display: grid;
-  gap: 8px;
-  width: clamp(170px, 19vw, 280px);
-  translate: -50% -50%;
-}
-.sv-lens-frame {
-  display: block;
-  aspect-ratio: 16 / 9;
-  border-radius: 12px;
-  background-color: #111;
-  background-repeat: no-repeat;
-  box-shadow: 0 0 0 2px var(--lens-color, #fff), 0 24px 60px rgb(0 0 0 / 0.6);
-}
-/* The glass: a marble rolled over the columns, with the frame inside. Drawn in WebGL; the card above is the fallback. */
-.sv-glass { display: none; }
-.sv-lens[data-glass] { --glass-d: clamp(210px, 21vw, 300px); }
-.sv-lens[data-glass] :is(.sv-lens-line, .sv-lens-frame) { display: none; }
-.sv-lens[data-glass] .sv-lens-card { top: 40%; width: auto; gap: 14px; translate: -50% calc(var(--glass-d) / -2); }
-.sv-lens[data-glass] .sv-glass { position: relative; display: block; width: var(--glass-d); aspect-ratio: 1; justify-self: center; }
-.sv-glass-canvas {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25), 18px 34px 50px -14px rgb(0 0 0 / 0.75), 4px 8px 16px -6px rgb(0 0 0 / 0.5);
-}
-/* Light focused through the ball, falling on the columns below and to the right. */
-.sv-glass::before {
-  content: '';
-  position: absolute;
-  left: 30%;
-  top: 74%;
-  width: 70%;
-  height: 46%;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, color-mix(in oklch, var(--lens-color, #fff) 55%, #fff) 0%, color-mix(in oklch, var(--lens-color, #fff) 40%, transparent) 45%, transparent);
-  opacity: 0.5;
-  filter: blur(8px);
-}
-.sv-lens[data-glass] .sv-lens-meta { font-size: 15px; }
-.sv-lens-meta { display: flex; justify-content: center; gap: 10px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; text-shadow: 0 1px 10px rgb(0 0 0 / 0.9); }
-.sv-lens-name { opacity: 0.8; font-weight: 520; }
-
-.sv-copy { position: absolute; left: var(--pad); bottom: clamp(28px, 6vh, 72px); max-width: min(100% - 2 * var(--pad), 980px); }
-.mark {
-  margin: 0;
-  font-size: clamp(104px, 21vw, 340px);
-  font-stretch: 125%;
-  font-weight: 900;
-  line-height: 0.8;
-  letter-spacing: -0.055em;
-  text-shadow: 0 8px 60px rgb(0 0 0 / 0.35);
-}
-.hero-line {
-  max-width: 22ch;
-  margin: clamp(14px, 2vw, 26px) 0 0;
-  font-size: clamp(20px, 2.3vw, 32px);
-  font-stretch: 106%;
-  font-weight: 500;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
-  text-wrap: balance;
-}
-.hero-watch {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  height: 52px;
-  margin-top: clamp(20px, 2.6vw, 34px);
-  padding: 0 22px 0 18px;
-  border: 0;
-  border-radius: 999px;
-  background: #fff;
-  color: #0b0b0d;
-  font: inherit;
-  font-size: 17px;
-  font-weight: 640;
-  pointer-events: auto;
-  cursor: pointer;
-  box-shadow: 0 10px 40px rgb(0 0 0 / 0.35);
-  transition: scale 90ms ease, background-color 140ms ease;
-}
-.hero-watch svg { width: 20px; height: 20px; fill: currentColor; }
-.hero-watch:active { scale: 0.97; }
-@media (hover: hover) { .hero-watch:hover { background: var(--bar-chip, #fff); } }
-.hero-watch:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
-.hero-watch-time { color: rgb(11 11 13 / 0.55); font-weight: 520; font-variant-numeric: tabular-nums; }
-.hero-watch-time:empty { display: none; }
-.sv-caption { position: absolute; left: var(--pad); right: var(--pad); bottom: clamp(32px, 7vh, 80px); opacity: 0; }
-.sv-caption h2 {
-  margin: 0;
-  font-size: clamp(44px, 7.4vw, 120px);
-  font-stretch: 120%;
-  font-weight: 860;
-  line-height: 0.9;
-  letter-spacing: -0.045em;
-  text-shadow: 0 6px 50px rgb(0 0 0 / 0.4);
-}
-.sv-caption p { max-width: 40ch; margin: 16px 0 0; font-size: clamp(17px, 1.6vw, 22px); font-weight: 500; opacity: 0.85; text-wrap: balance; }
 
 /* ---------------------------------------------------------------- Test the player: a small panel of tiles */
 
@@ -607,9 +481,101 @@ html.lenis { scroll-snap-type: none; }
 @media (hover: hover) { [data-tip]:hover::after { opacity: 1; translate: -50% 0; transition-delay: 400ms; } }
 [data-tip]:has(input:focus-visible)::after { opacity: 1; translate: -50% 0; }
 
-/* ---------------------------------------------------------------- Sections */
+/* ---------------------------------------------------------------- How it works: the film tells it as you scroll */
 
-.how, .care, .install { margin-top: clamp(112px, 14vw, 200px); }
+.how { margin-top: clamp(40px, 6vw, 96px); }
+/* The scroll the story takes; the picture stays pinned for all of it. */
+.how-track { position: relative; height: 330svh; }
+.how-pin {
+  position: sticky;
+  top: var(--bar-h);
+  width: 100vw;
+  height: calc(100svh - var(--bar-h));
+  margin-left: calc(50% - 50vw);
+  overflow: hidden;
+}
+.how-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.how-copy {
+  position: absolute;
+  top: 50%;
+  left: max(var(--pad), calc((100vw - var(--max)) / 2 + var(--pad)));
+  width: min(32vw, 440px);
+  translate: 0 -50%;
+}
+.how-kicker {
+  margin: 0 0 18px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+/* One sentence at a time, large, like a film's own titles. */
+.how-steps { display: grid; margin: 0; padding: 0; list-style: none; }
+.how-step {
+  grid-area: 1 / 1;
+  color: var(--ink-2);
+  font-size: clamp(24px, 2.5vw, 38px);
+  font-stretch: 108%;
+  font-weight: 560;
+  line-height: 1.16;
+  letter-spacing: -0.02em;
+  text-wrap: pretty;
+  opacity: 0;
+  translate: 0 14px;
+  transition: opacity 420ms ease, translate 520ms var(--ease);
+}
+.how-step strong { display: block; margin-bottom: 0.15em; color: var(--ink); font-weight: 760; }
+.how-step[data-on] { opacity: 1; translate: 0 0; }
+.how-note {
+  max-width: 62ch;
+  margin: clamp(32px, 5vw, 64px) 0 0;
+  color: var(--ink-2);
+  font-size: 15px;
+  text-wrap: pretty;
+}
+.how-note a { color: var(--ink); text-decoration-color: var(--hair); }
+
+/* ---------------------------------------------------------------- Made for everyone: one line and the way to check it */
+
+.access {
+  display: grid;
+  justify-items: start;
+  gap: 18px;
+  margin-top: clamp(120px, 15vw, 220px);
+  padding-top: clamp(40px, 5vw, 64px);
+  border-top: 1px solid var(--hair);
+}
+.access h2 {
+  margin: 0;
+  font-size: clamp(34px, 4.8vw, 68px);
+  font-stretch: 115%;
+  font-weight: 780;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+}
+.access p { max-width: 44ch; margin: 0; color: var(--ink-2); font-size: clamp(18px, 1.6vw, 22px); line-height: 1.4; text-wrap: pretty; }
+.access-open {
+  height: 48px;
+  margin-top: 6px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 640;
+  cursor: pointer;
+  transition: scale 90ms ease, opacity 140ms ease;
+}
+.access-open:active { scale: 0.97; }
+@media (hover: hover) { .access-open:hover { opacity: 0.88; } }
+.access-open:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+/* ---------------------------------------------------------------- Use it */
+
+.install { margin-top: clamp(120px, 15vw, 220px); }
 
 .section-head {
   display: grid;
@@ -629,19 +595,6 @@ html.lenis { scroll-snap-type: none; }
   text-wrap: balance;
 }
 .section-head p { max-width: 46ch; margin: 0; color: var(--ink-2); font-size: 18px; text-wrap: pretty; }
-
-.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(14px, 2vw, 24px); margin: 0; padding: 0; list-style: none; }
-.step figure { margin: 0; display: grid; gap: 14px; }
-.step-visual { aspect-ratio: 4 / 3; overflow: hidden; border-radius: 16px; background: #111; box-shadow: 0 0 0 1px var(--hair); }
-.step-visual img, .step-visual canvas { display: block; width: 100%; height: 100%; }
-.step-storyboard img { object-fit: cover; object-position: top left; }
-.step figcaption { max-width: 38ch; color: var(--ink-2); font-size: 15px; text-wrap: pretty; }
-.step figcaption strong { color: var(--ink); font-weight: 660; }
-
-.care-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(24px, 3vw, 40px) clamp(20px, 3vw, 48px); margin: 0; }
-.care-list div { padding-top: 18px; border-top: 1px solid var(--hair); }
-.care-list dt { font-size: 19px; font-stretch: 110%; font-weight: 680; }
-.care-list dd { max-width: 34ch; margin: 6px 0 0; color: var(--ink-2); font-size: 15px; text-wrap: pretty; }
 
 .install .section-head p code { color: var(--ink); }
 .code { position: relative; overflow: auto; border-radius: 18px; background: #111113; color: #d8d6d1; box-shadow: 0 0 0 1px var(--hair); }
@@ -679,35 +632,20 @@ html.lenis { scroll-snap-type: none; }
 
 @media (max-width: 900px) {
   .section-head { grid-template-columns: minmax(0, 1fr); }
-  .steps, .care-list { grid-template-columns: minmax(0, 1fr); }
-  .step-visual { aspect-ratio: 16 / 9; }
-  .sv-copy { bottom: auto; top: calc(var(--bar-h) + 64px); }
-  .sv-titles span { top: auto; bottom: 22px; font-size: 13px; }
-  .sv-titles small { display: none; }
-  .sv-shade {
-    background:
-      linear-gradient(to bottom, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.25) 42%, transparent 58%),
-      linear-gradient(to top, rgb(0 0 0 / 0.7), transparent 22%);
-  }
-  .sv-lens-card { top: 64%; }
-  .sv-lens[data-glass] { --glass-d: clamp(150px, 40vw, 220px); }
-  .sv-lens[data-glass] .sv-lens-card { top: 60%; }
+  /* The words over the picture's area, at the top. */
+  .how-copy { top: 24px; right: var(--pad); width: auto; translate: none; }
+  .how-step { font-size: clamp(21px, 5.4vw, 30px); }
 }
 
 @media (max-width: 700px) {
-  :root { --bar-h: 54px; --chrome: 332px; }
+  :root { --bar-h: 54px; --chrome: 380px; }
   .bar-links a:not([data-section='watch']):not([href^='https']) { display: none; }
-  /* On narrow panels the names run up the panel, like a film credit on a spine. */
-  .sv-titles span { bottom: 18px; writing-mode: vertical-rl; rotate: 180deg; font-size: 14px; }
-  .shelf { flex-direction: column; }
-  .films-pick { grid-template-columns: 1fr 1fr; }
+  .watch-head { justify-content: start; }
+  .shelf { flex-direction: column; flex-wrap: nowrap; }
+  .films-pick { flex: none; grid-template-columns: 1fr 1fr; }
   .pick { --pick-h: 72px; }
   .test-open { justify-content: center; height: 52px; }
-  .shelf-tools .test-open { flex: 1; }
-  .shelf { flex-wrap: nowrap; }
-  .films-pick { flex: none; }
   .credit { order: 0; flex-basis: auto; }
-  .sv-caption h2 { font-size: 46px; }
 
   /* A floating card at the bottom, within thumb reach. A phone can't show a wider player, so width is left out. */
   .test-panel {
@@ -721,6 +659,6 @@ html.lenis { scroll-snap-type: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .player-frame, .shelf, .test-panel { transition: none; }
+  .player-frame, .shelf, .test-panel, .how-step { transition: none; }
 }
-:root[data-tint-motion='reduce'] :is(.player-frame, .shelf, .test-panel) { transition: none; }
+:root[data-tint-motion='reduce'] :is(.player-frame, .shelf, .test-panel, .how-step) { transition: none; }
