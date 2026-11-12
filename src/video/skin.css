@@ -1331,7 +1331,7 @@
     :scope[data-tint-pause-rest] .tint-pause,
     :scope[data-tint-pause-rest]::before { transition-duration: 900ms; }
 
-    /* Three levels and nothing else: a quiet word, the title, where you are. */
+    /* Three levels and nothing else: a quiet word, the title, the film in one line. */
     .tint-pause { gap: clamp(4px, 0.8cqi, 8px); }
     .tint-pause-kicker {
       color: var(--tint-ink-2);
@@ -1349,23 +1349,31 @@
       text-wrap: balance;
       text-shadow: 0 2px 24px rgb(0 0 0 / 0.35);
     }
-    .tint-pause-foot {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: baseline;
-      gap: 0 0.55em;
-      margin-top: clamp(2px, 0.4cqi, 4px);
-      color: var(--tint-ink-2);
-      font-size: clamp(12px, 1.4cqi, 15px);
-      font-weight: 480;
-      font-variant-numeric: tabular-nums;
+    /* A real chapter's name, when the video has chapters. */
+    .tint-pause-chapter {
+      color: var(--tint-ink);
+      font-size: clamp(13px, 1.5cqi, 16px);
+      font-weight: 600;
     }
-    .tint-pause-scene { color: var(--tint-ink); font-weight: 600; }
-    .tint-pause-scene:empty,
-    .tint-pause-range:empty { display: none; }
-    .tint-pause-scene:not(:empty) + .tint-pause-range:not(:empty)::before { content: '·'; margin-inline-end: 0.55em; }
+    /* The film's one line, at reading size, two lines at most. */
+    .tint-pause-line {
+      max-width: 44ch;
+      margin-top: clamp(2px, 0.5cqi, 6px);
+      color: oklch(0.975 0.006 var(--tint-h) / 0.78);
+      font-size: clamp(13px, 1.45cqi, 16px);
+      font-weight: 440;
+      line-height: 1.45;
+      text-wrap: pretty;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      overflow: hidden;
+    }
+    .tint-pause-chapter:empty,
+    .tint-pause-line:empty { display: none; }
     @container media-root (width < 30rem) {
-      .tint-pause-foot { display: none; }
+      .tint-pause-line { display: none; }
     }
     @container media-root (width < 24rem) {
       .tint-pause { display: none; }

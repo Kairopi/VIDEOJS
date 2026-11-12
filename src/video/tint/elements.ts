@@ -1383,8 +1383,8 @@ export class TintScenesElement extends UIElement {
 /**
  * <tint-pause>: what a pause shows. Streaming services use a pause to say where you are (Netflix's title card, Prime
  * Video's X-Ray); Apple TV dims a little so the controls read, then gets out of the way so you can study the frame.
- * Tint does both, in its own terms: after a beat, a card with the scene you are in, its time span and its colours,
- * taken from the fingerprint. After a while untouched, the card and the shade lift and leave the frame clean.
+ * Tint does both: after a beat, a card with the title and the film's one line (and a chapter's name, when the video
+ * has chapters). After a while untouched, the card and the shade lift and leave the frame clean.
  * Display only, so it is hidden from assistive tech (the player already announces the pause).
  */
 export class TintPauseElement extends UIElement {
@@ -1398,8 +1398,8 @@ export class TintPauseElement extends UIElement {
   #model: TintModel | null = null;
   #container: HTMLElement | null = null;
   #kicker = document.createElement('p');
-  #scene = document.createElement('span');
-  #range = document.createElement('span');
+  #chapter = document.createElement('p');
+  #line = document.createElement('p');
   #showTimer = 0;
   #restTimer = 0;
   #shownScene = -1;
@@ -1408,17 +1408,16 @@ export class TintPauseElement extends UIElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.setAttribute('aria-hidden', 'true');
-    // Type only, like a streaming title card: a quiet word, the title, and one line saying where you are.
+    // Only what means something to the person watching, as on Netflix's pause: what this is, in words. A chapter
+    // name when the video has real chapters; never a detected scene number or a time range, which the timeline
+    // already shows and which name nothing.
     this.#kicker.className = 'tint-pause-kicker';
-    this.#kicker.append(text('tint.paused', 'Paused'));
-    const foot = document.createElement('p');
-    foot.className = 'tint-pause-foot';
-    this.#scene.className = 'tint-pause-scene';
-    this.#range.className = 'tint-pause-range';
-    foot.append(this.#scene, this.#range);
-    // The title stays as authored in the template (a <media-title>); the kicker goes above it and the foot below.
+    this.#kicker.append(text('tint.watching', "You're watching"));
+    this.#chapter.className = 'tint-pause-chapter';
+    this.#line.className = 'tint-pause-line';
+    // The title stays as authored in the template (a <media-title>); the kicker goes above it, the rest below.
     this.prepend(this.#kicker);
-    this.append(foot);
+    this.append(this.#chapter, this.#line);
 
     this.#container = containerOf(this);
     if (!this.#container) return;
@@ -1476,21 +1475,15 @@ export class TintPauseElement extends UIElement {
   }
 
   #fill(): void {
+    // The film's one line, when the page gives the title card one.
+    const line = this.#container?.querySelector('.tint-logline')?.textContent?.trim() ?? '';
+    if (this.#line.textContent !== line) this.#line.textContent = line;
     const model = this.#model;
     const now = this.#time.value?.currentTime ?? 0;
-    if (!model || model.status !== 'ready' || !model.scenes.length) {
-      this.#scene.textContent = '';
-      this.#range.textContent = '';
-      return;
-    }
-    const k = model.sceneAt(now);
+    const k = model?.status === 'ready' && model.scenes.length ? model.sceneAt(now) : -1;
     if (k === this.#shownScene) return;
     this.#shownScene = k;
-    const scene = model.scenes[k]!;
-    this.#scene.replaceChildren(
-      ...(scene.title ? [document.createTextNode(scene.title)] : [text('tint.scene', 'Scene'), document.createTextNode(` ${k + 1} / ${model.scenes.length}`)])
-    );
-    this.#range.textContent = `${formatTime(scene.start)} – ${formatTime(scene.end)}`;
+    this.#chapter.textContent = (k >= 0 && model!.scenes[k]!.title) || '';
   }
 }
 
