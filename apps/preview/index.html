@@ -6,6 +6,7 @@
     <title>Tint: a Video.js player that wears the film's colours</title>
     <meta name="description" content="An open-source Video.js v10 skin. The film's colour fingerprint becomes the poster and the timeline, and the scene you're watching colours the controls." />
     <meta name="theme-color" content="#000000" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <meta property="og:title" content="Tint" />
     <meta property="og:description" content="A Video.js player that wears the film's colours." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -34,21 +35,22 @@
 
     <main id="top">
       <!-- The product first: the player on its title page, and the four films under it. -->
+      <!-- The screen first, in a dark room it lights. The four films wait below it. -->
       <section class="watch" id="watch" aria-labelledby="mark">
-        <div class="watch-head">
-          <h1 class="mark" id="mark">Tint</h1>
-          <p class="hero-line">A Video.js skin that wears the colours of the film it plays.</p>
-        </div>
+        <h1 class="visually-hidden" id="mark">Tint, a Video.js skin that wears the colours of the film it plays</h1>
         <div class="player-frame">
           <div class="player" id="player"></div>
         </div>
         <div class="shelf">
+          <div class="shelf-head">
+            <h2 class="shelf-title">More films</h2>
+            <p class="credit"><span class="credit-title"></span> by <a href="https://studio.blender.org/films/">Blender Studio</a>, <span class="credit-year"></span>. <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Streamed by Mux.</p>
+            <button class="test-open" type="button" popovertarget="test-panel">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
+              Test the player
+            </button>
+          </div>
           <div class="films-pick" role="group" aria-label="Choose a film"></div>
-          <button class="test-open" type="button" popovertarget="test-panel">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
-            Test the player
-          </button>
-          <p class="credit"><span class="credit-title"></span> by <a href="https://studio.blender.org/films/">Blender Studio</a>, <span class="credit-year"></span>. <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Streamed by Mux.</p>
         </div>
       </section>
 
@@ -126,7 +128,7 @@
           </div>
         </div>
 
-        <div class="cc-pair">
+        <div class="cc-pair cc-trio">
           <label class="cc-tile">
             <input type="checkbox" role="switch" name="motion" value="reduce" />
             <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c2.2 0 2.8-3 5-3s2.8 6 5 6 2.8-3 5-3h3" /></svg>Less motion</span>
@@ -134,6 +136,11 @@
           <label class="cc-tile">
             <input type="checkbox" role="switch" name="contrast" value="more" />
             <span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" /></svg>More contrast</span>
+          </label>
+          <!-- Quiet: the colour without the theatre, for sites that want a calmer player. -->
+          <label class="cc-tile">
+            <input type="checkbox" role="switch" name="quiet" value="quiet" />
+            <span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="6" width="17" height="12" rx="2.5" /><path d="M6.5 15h11" /></svg>Quiet</span>
           </label>
         </div>
 

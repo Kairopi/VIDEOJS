@@ -252,6 +252,34 @@ function select(film: Film): void {
   story.reset();
 }
 
+// ---------------------------------------------------------------- The house lights follow the film
+
+// As in a cinema: down while the film plays, half up when it's paused, up when it ends or you look away from the
+// screen. The page around the screen fades; the screen and its light stay. Point at the bar or the films to use them.
+const root = document.documentElement;
+const skin = () => player.querySelector<HTMLElement>('.media-skin');
+let screenInView = true;
+function room(): void {
+  const m = media();
+  const state = skin()?.dataset.tintState;
+  let level: 'up' | 'half' | 'down' = 'up';
+  if (m && screenInView && frame.dataset.tint !== 'quiet' && state !== 'ended' && state !== 'poster') {
+    if (!m.paused) level = 'down';
+    else if (m.currentTime > 0) level = 'half';
+  }
+  if (root.dataset.room !== level) root.dataset.room = level;
+}
+for (const type of ['play', 'playing', 'pause', 'ended', 'seeked', 'emptied']) player.addEventListener(type, room, true);
+new IntersectionObserver(
+  ([entry]) => {
+    screenInView = Boolean(entry && entry.intersectionRatio > 0.6);
+    room();
+  },
+  { threshold: [0, 0.6, 1] }
+).observe(frame);
+// The skin's own state changes (the end sheet, the poster) light the room too.
+new MutationObserver(room).observe(player, { subtree: true, attributes: true, attributeFilter: ['data-tint-state'] });
+
 // ---------------------------------------------------------------- How it works: the film tells it as you scroll
 
 /**
@@ -520,6 +548,11 @@ form.addEventListener('change', (event) => {
     case 'contrast':
       if (on) frame.dataset.tintContrast = 'more';
       else delete frame.dataset.tintContrast;
+      break;
+    case 'quiet':
+      if (on) frame.dataset.tint = 'quiet';
+      else delete frame.dataset.tint;
+      room();
       break;
     case 'accent':
       if (value === 'brand') frame.style.setProperty('--media-accent-color', BRAND);

@@ -37,6 +37,8 @@ type TintState = 'poster' | 'folding' | 'playing' | 'unfolding' | 'ended' | 'err
 const reducedMotion = (el: Element) =>
   matchMedia('(prefers-reduced-motion: reduce)').matches || Boolean(el.closest('[data-tint-motion="reduce"]'));
 const dpr = () => Math.min(2, window.devicePixelRatio || 1);
+/** Quiet: `data-tint="quiet"` on the player or any ancestor keeps the colour and drops the theatre. */
+const quiet = (el: Element) => Boolean(el.closest('[data-tint="quiet"]'));
 
 function containerOf(el: Element): HTMLElement | null {
   return el.closest('media-container');
@@ -227,8 +229,17 @@ export class TintPrintElement extends UIElement {
     for (const type of ['pointerdown', 'pointerup'] as const) this.#band.addEventListener(type, (e) => e.stopPropagation(), { signal });
     this.#resize = new ResizeObserver(() => this.#paint());
     this.#resize.observe(this.#container);
+    // The bar's height, so the transport can centre in the picture above it when a narrow bar wraps to two rows.
+    requestAnimationFrame(() => {
+      const bar = this.#container?.querySelector<HTMLElement>('.tint-bar');
+      if (!bar || !this.#resize) return;
+      this.#barResize = new ResizeObserver(() => this.#container?.style.setProperty('--tint-bar-h', `${Math.round(bar.offsetHeight)}px`));
+      this.#barResize.observe(bar);
+    });
     this.#onModel();
   }
+
+  #barResize: ResizeObserver | null = null;
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
@@ -236,6 +247,8 @@ export class TintPrintElement extends UIElement {
     this.#disconnect = null;
     this.#resize?.disconnect();
     this.#resize = null;
+    this.#barResize?.disconnect();
+    this.#barResize = null;
     this.#live.remove();
     window.clearTimeout(this.#foldTimer);
     window.clearTimeout(this.#artTimer);
@@ -281,7 +294,7 @@ export class TintPrintElement extends UIElement {
 
     window.clearTimeout(this.#foldTimer);
     cancelAnimationFrame(this.#foldRaf);
-    const canAnimate = prev !== null && !reducedMotion(this) && this.#model?.status === 'ready';
+    const canAnimate = prev !== null && !reducedMotion(this) && !quiet(this) && this.#model?.status === 'ready';
 
     if (canAnimate && (prev === 'poster' || prev === 'ended') && target === 'playing') {
       this.#runFold('in', prev === 'ended' && this.#container?.hasAttribute('data-tint-contact'));
@@ -1542,7 +1555,7 @@ export class TintScrubElement extends UIElement {
       if (dragging === this.#dragging) return;
       this.#dragging = dragging;
       this.#prevU = -1;
-      if (dragging && !this.#raf && !reducedMotion(this) && this.#model?.status === 'ready') {
+      if (dragging && !this.#raf && !reducedMotion(this) && !quiet(this) && this.#model?.status === 'ready') {
         this.#last = performance.now();
         this.#raf = requestAnimationFrame(this.#tick);
       }
@@ -1560,7 +1573,7 @@ export class TintScrubElement extends UIElement {
 
   #prepare(): void {
     const model = this.#model;
-    if (this.#gl !== undefined || !model || model.status !== 'ready' || reducedMotion(this)) return;
+    if (this.#gl !== undefined || !model || model.status !== 'ready' || reducedMotion(this) || quiet(this)) return;
     this.#gl = SlitScanGL.create(model, this.#container?.clientWidth ?? 0);
     if (!this.#gl) return;
     this.#gl.canvas.className = 'tint-scrub-canvas';
@@ -1772,7 +1785,7 @@ export class TintContactElement extends UIElement {
   /** Whether the sheet can be shown: the storyboard is read and the player is big enough for it to mean something. */
   available(): boolean {
     const c = this.#container;
-    return Boolean(this.#model?.status === 'ready' && this.#model.frames.length > 1 && c && c.clientWidth >= 300 && c.clientHeight >= 190);
+    return Boolean(this.#model?.status === 'ready' && this.#model.frames.length > 1 && c && !quiet(c) && c.clientWidth >= 300 && c.clientHeight >= 190);
   }
 
   /** Start fetching sharp tiles, so the sheet is crisp by the time the frames land in it. */
@@ -2073,8 +2086,197 @@ export class TintContactElement extends UIElement {
   }
 }
 
+/**
+ * <tint-line>: the colour line. While the controls rest, the fingerprint stays on as a thin line along the bottom of
+ * the picture, lit up to now, so Tint is there for the whole film and not only when you reach for it.
+ */
+export class TintLineElement extends UIElement {
+  static readonly tagName = 'tint-line';
+
+  #time = new PlayerController(this, playerContext, selectTime);
+  #model: TintModel | null = null;
+  #dim = document.createElement('canvas');
+  #lit = document.createElement('canvas');
+  #disconnect: AbortController | null = null;
+  #resize: ResizeObserver | null = null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.setAttribute('aria-hidden', 'true');
+    this.#dim.className = 'tint-line-dim';
+    this.#lit.className = 'tint-line-lit';
+    this.replaceChildren(this.#dim, this.#lit);
+    const container = containerOf(this);
+    if (!container) return;
+    this.#model = getModel(container);
+    this.#disconnect = new AbortController();
+    this.#model.addEventListener('change', this.#paint, { signal: this.#disconnect.signal });
+    this.#resize = new ResizeObserver(this.#paint);
+    this.#resize.observe(this);
+    this.#paint();
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#disconnect?.abort();
+    this.#resize?.disconnect();
+  }
+
+  protected override update(changed: PropertyValues): void {
+    super.update(changed);
+    const time = this.#time.value;
+    const duration = time?.duration || this.#model?.duration || 0;
+    if (time && duration) this.style.setProperty('--tint-line-at', `${clamp((time.currentTime / duration) * 100, 0, 100)}%`);
+  }
+
+  #paint = (): void => {
+    const model = this.#model;
+    const r = this.getBoundingClientRect();
+    if (!model || model.status !== 'ready' || !r.width) return;
+    for (const [canvas, filter] of [
+      [this.#dim, DIM],
+      [this.#lit, LIT],
+    ] as const) {
+      const print = model.print(r.width * dpr(), Math.max(2, Math.round(r.height * dpr())), filter);
+      if (!print) continue;
+      canvas.width = print.width;
+      canvas.height = print.height;
+      canvas.getContext('2d')!.drawImage(print, 0, 0);
+    }
+  };
+}
+
+/**
+ * <tint-ambient>: light from the screen. The colours along each edge of the frame you are watching, and its overall
+ * colour, are cast on the page around the player, the way a screen lights a dark room (bias lighting; YouTube's
+ * ambient mode and Philips's Ambilight work the same way). The colours come from the storyboard frame, so nothing
+ * reads the video, and they change only when the frame does, fading over a second and a half.
+ *
+ * Sets `data-tint-ambient` and the --tint-amb-* colours on the container; the skin's CSS draws the light. Off in quiet
+ * mode and with forced colours; remove the element to keep the light inside the player.
+ */
+export class TintAmbientElement extends UIElement {
+  static readonly tagName = 'tint-ambient';
+
+  #time = new PlayerController(this, playerContext, selectTime);
+  #playback = new PlayerController(this, playerContext, selectPlayback);
+  #model: TintModel | null = null;
+  #container: HTMLElement | null = null;
+  #sample = document.createElement('canvas');
+  #frame = -1;
+  #disconnect: AbortController | null = null;
+  #resize: ResizeObserver | null = null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.setAttribute('aria-hidden', 'true');
+    this.#container = containerOf(this);
+    if (!this.#container) return;
+    this.#model = getModel(this.#container);
+    this.#sample.width = 12;
+    this.#sample.height = 6;
+    this.#disconnect = new AbortController();
+    this.#model.addEventListener('change', () => ((this.#frame = -1), this.requestUpdate()), { signal: this.#disconnect.signal });
+    this.#resize = new ResizeObserver(() => this.#size());
+    this.#resize.observe(this.#container);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#disconnect?.abort();
+    this.#resize?.disconnect();
+    this.#container?.removeAttribute('data-tint-ambient');
+  }
+
+  #size(): void {
+    const c = this.#container;
+    if (c) c.style.setProperty('--tint-amb-size', `${Math.round(clamp(c.clientWidth * 0.075, 28, 150))}px`);
+  }
+
+  protected override update(changed: PropertyValues): void {
+    super.update(changed);
+    const c = this.#container;
+    const model = this.#model;
+    if (!c || !model) return;
+    const on = model.status === 'ready' && !quiet(c) && !matchMedia('(forced-colors: active)').matches;
+    if (!on) {
+      c.removeAttribute('data-tint-ambient');
+      return;
+    }
+    if (!c.hasAttribute('data-tint-ambient')) {
+      this.#size();
+      c.setAttribute('data-tint-ambient', '');
+    }
+    const playback = this.#playback.value;
+    const state = c.getAttribute('data-tint-state');
+    // The poster lights the room with its key art; the film with the frame you are on.
+    const resting = !playback?.started || state === 'poster' || state === 'ended';
+    const frame = resting ? model.keyArt() : model.frameAt(this.#time.value?.currentTime ?? 0);
+    // Brightest while the film plays, a little lower paused or on the poster.
+    c.style.setProperty('--tint-amb-on', String(resting ? 0.7 : playback?.paused ? 0.85 : 1));
+    if (frame === this.#frame || frame < 0) return;
+    this.#frame = frame;
+    this.#cast(model, frame);
+  }
+
+  /** Sample the frame's edges and middle, and set them as light: more colourful than the frame, never too dark to see. */
+  #cast(model: TintModel, index: number): void {
+    const f = model.frames[index];
+    const img = f && model.image(f.url);
+    if (!f || !img) return;
+    const g = this.#sample.getContext('2d', { willReadFrequently: true })!;
+    g.drawImage(img, f.x, f.y, f.w, f.h, 0, 0, 12, 6);
+    let data: Uint8ClampedArray;
+    try {
+      data = g.getImageData(0, 0, 12, 6).data;
+    } catch {
+      return;
+    }
+    const avg = (cells: [number, number][]) => {
+      let r = 0;
+      let gr = 0;
+      let b = 0;
+      for (const [x, y] of cells) {
+        const i = (y * 12 + x) * 4;
+        r += data[i]!;
+        gr += data[i + 1]!;
+        b += data[i + 2]!;
+      }
+      return light(r / cells.length, gr / cells.length, b / cells.length);
+    };
+    const row = (y: number) => Array.from({ length: 12 }, (_, x) => [x, y] as [number, number]);
+    const col = (x: number) => Array.from({ length: 6 }, (_, y) => [x, y] as [number, number]);
+    const all = Array.from({ length: 72 }, (_, i) => [i % 12, Math.floor(i / 12)] as [number, number]);
+    const s = this.#container!.style;
+    s.setProperty('--tint-amb-t', avg(row(0)));
+    s.setProperty('--tint-amb-b', avg(row(5)));
+    s.setProperty('--tint-amb-l', avg([...col(0), ...col(1)]));
+    s.setProperty('--tint-amb-r', avg([...col(10), ...col(11)]));
+    s.setProperty('--tint-amb-c', avg(all));
+  }
+}
+
+/** A frame's colour as light: hue kept, saturation raised, lightness held in a band that glows on a dark page. */
+function light(r: number, g: number, b: number): string {
+  const R = r / 255;
+  const G = g / 255;
+  const B = b / 255;
+  const max = Math.max(R, G, B);
+  const min = Math.min(R, G, B);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let h = 0;
+  if (d > 0) {
+    h = max === R ? ((G - B) / d) % 6 : max === G ? (B - R) / d + 2 : (R - G) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  return `hsl(${h.toFixed(0)} ${(Math.min(1, sat * 1.4) * 100).toFixed(0)}% ${(clamp(l * 1.1, 0.22, 0.52) * 100).toFixed(0)}% / 0.72)`;
+}
+
 export function defineTintElements(): void {
-  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement, TintPauseElement, TintScrubElement, TintContactElement]) {
+  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement, TintPauseElement, TintScrubElement, TintContactElement, TintLineElement, TintAmbientElement]) {
     if (!customElements.get(element.tagName)) customElements.define(element.tagName, element);
   }
 }

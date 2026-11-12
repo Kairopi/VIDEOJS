@@ -14,7 +14,7 @@
   --max: 1360px;
   --bar-h: 60px;
   /* Room the landed player leaves for the bar above it and the films below it. */
-  --chrome: 318px;
+  --chrome: 190px;
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
   --font: 'Mona Sans', ui-sans-serif, system-ui, sans-serif;
 }
@@ -116,48 +116,37 @@ main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline:
 .bar-links { display: flex; gap: clamp(14px, 2.2vw, 30px); margin-left: auto; font-size: 14px; font-weight: 520; }
 /* The house lights, small, at the end of the bar. */
 .bar .lights { --lights-w: 58px; --lights-h: 30px; --lights-pad: 3px; }
+/* ---------------------------------------------------------------- House lights, following the film */
+
+/* Down while the film plays, half up when paused. The screen and its light stay; everything else fades back.
+   Pointing at the bar or the films, or tabbing into them, brings them up again. */
+html { transition: background-color 1.2s ease; }
+:is(.bar, .shelf, .how, .access, .install, .foot) { transition: opacity 1.1s ease; }
+:root[data-room='down'] :is(.bar, .shelf, .how, .access, .install, .foot) { opacity: 0.1; }
+:root[data-room='half'] :is(.bar, .shelf, .how, .access, .install, .foot) { opacity: 0.55; }
+:root[data-room]:not([data-room='up']) :is(.bar, .shelf):is(:hover, :focus-within) { opacity: 1; transition-duration: 240ms; }
+/* With the lights up for a light page, a playing film still darkens the room. */
+:root[data-theme='light'][data-room='down'] { --bg: #0a0a0b; --ink: #f2f0ec; --ink-2: #9a978f; --hair: rgb(255 255 255 / 0.1); color-scheme: dark; }
+:root[data-theme='light'][data-room='down'] body { color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { html, :is(.bar, .shelf, .how, .access, .install, .foot) { transition: none; } }
+:root[data-tint-motion='reduce'], :root[data-tint-motion='reduce'] :is(.bar, .shelf, .how, .access, .install, .foot) { transition: none; }
+
 .bar-links a { opacity: 0.72; transition: opacity 160ms ease; }
 .bar-links a:hover, .bar-links a[aria-current='true'] { opacity: 1; }
 .bar-links a[aria-current='true'] { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 6px; }
 
-/* ---------------------------------------------------------------- Watch: the player first */
+/* ---------------------------------------------------------------- Watch: the screen in a dark room */
 
-/* Full width, one screen: a line of words, the player as large as the screen allows, the four films under it. */
+/* The screen as large as the room allows, with air around it for its light, and the four films waiting below. */
 .watch {
   display: grid;
-  align-content: center;
+  align-content: start;
   justify-items: center;
-  gap: 14px;
+  row-gap: clamp(36px, 6.5vh, 72px);
   width: 100vw;
   min-height: 100svh;
   margin-left: calc(50% - 50vw);
-  padding: calc(var(--bar-h) + 10px) var(--edge) 22px;
-}
-.watch-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px 32px;
-  width: 100%;
-  max-width: calc((100svh - var(--chrome)) * var(--ar, 2.39));
-  padding-inline: 4px;
-}
-.mark {
-  margin: 0;
-  font-size: clamp(34px, 3.6vw, 56px);
-  font-stretch: 125%;
-  font-weight: 860;
-  line-height: 1;
-  letter-spacing: -0.045em;
-}
-.hero-line {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: clamp(16px, 1.35vw, 20px);
-  font-weight: 480;
-  letter-spacing: -0.005em;
-  text-wrap: balance;
+  padding: calc(var(--bar-h) + clamp(20px, 4.5vh, 52px)) clamp(10px, 1.8vw, 28px) clamp(28px, 5vh, 56px);
 }
 
 .player-frame {
@@ -178,25 +167,25 @@ main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline:
   width: 100%;
   aspect-ratio: var(--shape);
   border-radius: 20px;
-  box-shadow: 0 0 0 1px var(--hair), 0 50px 140px -50px rgb(0 0 0 / 0.9);
 }
+/* Without its own light the screen gets a quiet edge and a shadow instead. */
+.player .media-skin:not([data-tint-ambient]) { box-shadow: 0 0 0 1px var(--hair), 0 50px 140px -50px rgb(0 0 0 / 0.9); }
 
-/* Under the player: the four films, and the test button. As wide as the player. */
+/* Under the screen: a small heading row, then the four films with room between them. As wide as the screen. */
 .shelf {
-  isolation: isolate;
-  display: flex;
-  gap: 10px;
+  display: grid;
+  gap: 14px;
   width: 100%;
   max-width: min(var(--size-max, 100%), calc((100svh - var(--chrome)) * var(--ar, 2.39)));
-  transition: opacity 240ms ease;
+  transition: opacity 600ms ease;
 }
-.films-pick { flex: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.shelf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding-inline: 2px; }
+.shelf-title { margin: 0; font-size: 15px; font-stretch: 110%; font-weight: 700; letter-spacing: -0.005em; }
 /* What is playing, and the credit its licence asks for. */
-.credit { order: 3; flex-basis: 100%; margin: 0; color: var(--ink-2); font-size: 13px; }
+.credit { flex: 1; min-width: 0; margin: 0; color: var(--ink-2); font-size: 13px; }
 .credit-title { color: var(--ink); font-weight: 600; }
 .credit a { text-decoration-color: var(--hair); }
-.shelf { flex-wrap: wrap; row-gap: 10px; }
-.films-pick { min-width: 0; }
+.films-pick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(12px, 1.5vw, 22px); min-width: 0; }
 /* A small title card per film: a real still, the name, and the film's fingerprint as a band along the bottom.
    The one playing is in full colour with its playhead on the band; the others wait, dimmed, until pointed at. */
 .pick {
@@ -272,16 +261,16 @@ main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline:
 .test-open {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  height: var(--pick-h, 92px);
-  padding: 0 20px;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px 0 12px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 999px;
   background: var(--panel);
   box-shadow: inset 0 0 0 1px var(--hair);
   color: var(--ink);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
@@ -399,6 +388,7 @@ main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline:
 .console { display: grid; gap: 6px; }
 .cc-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .cc-pair:has(.cc-width) { grid-template-columns: 1fr; }
+.cc-trio { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 /* Segmented controls: a recessed track with a raised chip for the choice. */
 .cc-seg { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--seg); }
@@ -644,7 +634,6 @@ main, .foot { width: min(100%, var(--max)); margin-inline: auto; padding-inline:
   .shelf { flex-direction: column; flex-wrap: nowrap; }
   .films-pick { flex: none; grid-template-columns: 1fr 1fr; }
   .pick { --pick-h: 72px; }
-  .test-open { justify-content: center; height: 52px; }
   .credit { order: 0; flex-basis: auto; }
 
   /* A floating card at the bottom, within thumb reach. A phone can't show a wider player, so width is left out. */

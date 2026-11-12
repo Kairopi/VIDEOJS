@@ -33,6 +33,11 @@ export const tintIcons: Record<string, string> = {
     '<rect x="4" y="5" width="2.2" height="14" rx="1.1"/><rect x="8.2" y="5" width="4.6" height="14" rx="1.2"/><rect x="14.8" y="5" width="1.8" height="14" rx="0.9"/><rect x="18.4" y="5" width="2.2" height="14" rx="1.1"/>',
     true
   ),
+  // Play that folds into pause: each half of the triangle is drawn with the same four points as one pause bar, so
+  // CSS can move one shape into the other (see .tint-morph-icon in skin.css). Drawn as play.
+  playpause:
+    '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+    '<path class="tint-pp-a" d="M8.6 5.8L13.8 8.9L13.8 15.1L8.6 18.2Z"/><path class="tint-pp-b" d="M13.8 8.9L19 12L19 12L13.8 15.1Z"/></svg>',
   check: svg('<path d="m5.5 12.5 4 4 9-9"/>'),
   // Save: an arrow down into a tray.
   download: svg('<path d="M12 4.5v10M7.5 10.5l4.5 4.5 4.5-4.5"/><path d="M4.5 15.5v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2"/>'),

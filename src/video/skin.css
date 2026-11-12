@@ -9,6 +9,13 @@
 @property --tint-l { syntax: '<number>'; inherits: true; initial-value: 0.86; }
 @property --tint-c { syntax: '<number>'; inherits: true; initial-value: 0.02; }
 @property --tint-h { syntax: '<number>'; inherits: true; initial-value: 70; }
+/* Light from the screen: the colours along each edge of the frame, and its overall colour. Registered so they fade. */
+@property --tint-amb-t { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --tint-amb-r { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --tint-amb-b { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --tint-amb-l { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --tint-amb-c { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --tint-amb-on { syntax: '<number>'; inherits: true; initial-value: 0; }
 
 @keyframes tint-spin { to { rotate: 360deg; } }
 @keyframes tint-mark-a {
@@ -83,7 +90,13 @@
     transition:
       --tint-l var(--tint-color-duration, 1100ms) ease,
       --tint-c var(--tint-color-duration, 1100ms) ease,
-      --tint-h var(--tint-color-duration, 1100ms) ease;
+      --tint-h var(--tint-color-duration, 1100ms) ease,
+      --tint-amb-t var(--tint-amb-duration, 1600ms) ease,
+      --tint-amb-r var(--tint-amb-duration, 1600ms) ease,
+      --tint-amb-b var(--tint-amb-duration, 1600ms) ease,
+      --tint-amb-l var(--tint-amb-duration, 1600ms) ease,
+      --tint-amb-c var(--tint-amb-duration, 1600ms) ease,
+      --tint-amb-on 900ms ease;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -1317,11 +1330,11 @@
       pointer-events: none;
       border-radius: inherit;
       background:
-        radial-gradient(120% 90% at 0% 100%, oklch(0.1 0.02 var(--tint-h) / 0.78), oklch(0.1 0.02 var(--tint-h) / 0.3) 45%, transparent 70%);
+        radial-gradient(140% 100% at 0% 100%, oklch(0.1 0.02 var(--tint-h) / 0.9), oklch(0.1 0.02 var(--tint-h) / 0.62) 40%, oklch(0.1 0.02 var(--tint-h) / 0.18) 64%, transparent 80%);
       transition: opacity 420ms ease;
     }
     :scope:dir(rtl)::before {
-      background: radial-gradient(120% 90% at 100% 100%, oklch(0.1 0.02 var(--tint-h) / 0.78), oklch(0.1 0.02 var(--tint-h) / 0.3) 45%, transparent 70%);
+      background: radial-gradient(140% 100% at 100% 100%, oklch(0.1 0.02 var(--tint-h) / 0.9), oklch(0.1 0.02 var(--tint-h) / 0.62) 40%, oklch(0.1 0.02 var(--tint-h) / 0.18) 64%, transparent 80%);
     }
     :scope[data-tint-pause][data-tint-state='playing']:not([data-tint-pause-rest]) .tint-pause { opacity: 1; translate: 0 0; }
     :scope[data-tint-pause][data-tint-state='playing']:not([data-tint-pause-rest])::before { opacity: 1; }
@@ -1391,6 +1404,176 @@
     @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
       .tint-indicator { background: var(--tint-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
     }
+
+    /* ---------- Transport: the middle of the picture ---------- */
+
+    /* Ten seconds back, play and pause, ten seconds on, where the eye already is. Shown and hidden with the bar. */
+    .tint-transport {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(14px, 5.5cqi, 60px);
+      pointer-events: none;
+      transition:
+        opacity var(--media-duration-controls) ease,
+        scale var(--media-duration-controls) var(--tint-ease-out);
+    }
+    /* A soft dark pool behind the transport, so it reads on a white sky as well as at night. */
+    .tint-transport::before {
+      content: '';
+      position: absolute;
+      inset: 18% 22%;
+      z-index: -1;
+      border-radius: 50%;
+      background: radial-gradient(closest-side, rgb(0 0 0 / 0.32), transparent);
+      pointer-events: none;
+    }
+    .tint-transport > .tint-button { pointer-events: auto; }
+    .tint-controls:not([data-visible]):not(:has(:focus-visible)) .tint-transport { opacity: 0; scale: 0.97; }
+    .tint-controls:not([data-visible]):not(:has(:focus-visible)) .tint-transport > .tint-button { pointer-events: none; }
+    :scope:is([data-tint-state='poster'], [data-tint-state='ended'], [data-tint-state='unfolding'], [data-tint-state='folding'], [data-tint-state='error']) .tint-transport {
+      opacity: 0 !important;
+      visibility: hidden;
+    }
+    .tint-transport .tint-button {
+      --size: clamp(44px, 7.4cqi, 66px);
+      width: var(--size);
+      height: var(--size);
+      border-radius: 50%;
+      color: #fff;
+      background: oklch(0.16 calc(var(--tint-c, 0) * 0.3) var(--tint-h) / 0.38);
+      box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.14), inset 0 1px 0 oklch(1 0 0 / 0.14), 0 10px 34px rgb(0 0 0 / 0.32);
+      -webkit-backdrop-filter: blur(16px) saturate(1.5);
+      backdrop-filter: blur(16px) saturate(1.5);
+      transition: background-color var(--tint-duration-fast) ease, scale 160ms var(--tint-ease-out);
+    }
+    /* Play is the big one, in the scene's own colour. */
+    .tint-transport .tint-play {
+      --size: clamp(58px, 10.5cqi, 96px);
+      color: var(--tint-on-accent);
+      background: oklch(var(--tint-l) var(--tint-c) var(--tint-h) / 0.94);
+      box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.3), 0 0 0 1px oklch(0 0 0 / 0.12), 0 14px 44px oklch(var(--tint-l) var(--tint-c) var(--tint-h) / 0.32);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    :where([data-tint-contrast='more']) .tint-transport .tint-play { background: var(--tint-accent); }
+    .tint-transport .tint-icon { width: 46%; height: 46%; }
+    .tint-transport .tint-play .tint-icon { width: 44%; height: 44%; }
+    @media (hover: hover) {
+      .tint-transport .tint-button:hover { background: oklch(0.2 calc(var(--tint-c, 0) * 0.3) var(--tint-h) / 0.55); scale: 1.06; }
+      .tint-transport .tint-play:hover { background: oklch(var(--tint-l) var(--tint-c) var(--tint-h)); }
+    }
+    .tint-transport .tint-button:active { scale: 0.92; }
+    .tint-transport .tint-button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; box-shadow: 0 0 0 6px var(--tint-halo); }
+    /* The transport answers a click on the picture itself, so the separate mark is only for when it is hidden. */
+    :scope:has(.tint-controls[data-visible]) .tint-play-indicator { visibility: hidden; }
+    /* Tooltips would sit on the picture; the transport's names are on the buttons themselves. */
+    .tint-transport .tint-tooltip { display: none; }
+    @media (forced-colors: active) {
+      .tint-transport .tint-button { border: 1px solid ButtonText; background: Canvas; color: ButtonText; }
+      .tint-transport::before { display: none; }
+    }
+    /* Where the bar wraps to two rows it covers the lower half of a small picture: centre in what is left above it. */
+    @container media-root (width < 36rem) {
+      .tint-transport { bottom: var(--tint-bar-h, 0px); }
+    }
+    @container media-root (width < 26rem) {
+      .tint-transport { gap: 12px; }
+      .tint-transport .tint-button { --size: 38px; }
+      .tint-transport .tint-play { --size: 50px; }
+    }
+
+    /* ---------- Icons that move ---------- */
+
+    /* Pause folds into play: each bar becomes half of the triangle. Where CSS can't move a path, the two icons swap. */
+    .tint-morph-icon { display: none; }
+    @supports (d: path('M0 0')) {
+      .tint-play .tint-morph-icon { display: block; opacity: 1; scale: 1; }
+      .tint-play:not([data-ended]) :is(.tint-play-icon, .tint-pause-icon) { display: none; }
+      .tint-play[data-ended] .tint-morph-icon { opacity: 0; scale: 0.6; }
+      .tint-morph-icon path { transition: d 260ms cubic-bezier(0.32, 0.72, 0, 1); }
+      .tint-play[data-started]:not([data-paused]):not([data-ended]) .tint-pp-a { d: path('M7.4 5.8L10.4 5.8L10.4 18.2L7.4 18.2Z'); }
+      .tint-play[data-started]:not([data-paused]):not([data-ended]) .tint-pp-b { d: path('M13.6 5.8L16.6 5.8L16.6 18.2L13.6 18.2Z'); }
+    }
+    /* Ten seconds: the arrow winds back or on as you press, and springs home. The number stays still. */
+    .tint-seek .tint-icon path {
+      transform-box: view-box;
+      transform-origin: 12px 12.6px;
+      transition: rotate 420ms cubic-bezier(0.34, 1.4, 0.64, 1);
+    }
+    .tint-seek-back:active .tint-icon path { rotate: -48deg; transition-duration: 110ms; transition-timing-function: ease-out; }
+    .tint-seek-forward:active .tint-icon path { rotate: 48deg; transition-duration: 110ms; transition-timing-function: ease-out; }
+    .tint-seek .tint-icon text { transition: scale 160ms ease; transform-box: fill-box; transform-origin: center; }
+    .tint-seek:active .tint-icon text { scale: 0.86; }
+    /* Volume: the waves pulse out once when you point at it. */
+    @keyframes tint-wave { 0% { opacity: 0.25; translate: -1.5px 0; } 100% { opacity: 1; translate: 0 0; } }
+    @media (hover: hover) {
+      .tint-mute:hover .tint-icon path:not(:first-child) { animation: tint-wave 420ms var(--tint-ease-out) both; }
+      .tint-mute:hover .tint-icon path:nth-child(3) { animation-delay: 70ms; }
+      /* Fullscreen: the corners push out. Settings: the gear turns. Picture-in-picture: the small window slides. */
+      .tint-fullscreen:hover .tint-icon path { transform-box: view-box; transform-origin: 12px 12px; scale: 1.1; }
+      .tint-settings-button:hover .tint-icon { rotate: 45deg; }
+      .tint-pip:hover .tint-icon :is(rect, path:last-child) { translate: 0.6px 0.6px; }
+    }
+    .tint-fullscreen .tint-icon path { transition: scale 220ms var(--tint-ease-out); }
+    .tint-settings-button .tint-icon { transition: rotate 420ms var(--tint-ease-out), opacity var(--tint-duration-fast) ease; }
+    .tint-settings-button[aria-expanded='true'] .tint-icon { rotate: 90deg; }
+    .tint-pip .tint-icon :is(rect, path) { transition: translate 220ms var(--tint-ease-out); }
+    @media (prefers-reduced-motion: reduce) {
+      .tint-icon, .tint-icon :is(path, rect, text) { transition: none !important; animation: none !important; }
+      .tint-seek:active .tint-icon path, .tint-settings-button:is(:hover, [aria-expanded='true']) .tint-icon { rotate: none; }
+    }
+    :where([data-tint-motion='reduce']) :is(.tint-icon, .tint-icon path, .tint-icon rect, .tint-icon text) { transition: none !important; animation: none !important; }
+
+    /* ---------- The colour line: Tint while the controls rest ---------- */
+
+    .tint-line {
+      position: absolute;
+      inset: auto 0 0;
+      height: clamp(2px, 0.3cqi, 4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 500ms ease;
+    }
+    .tint-line canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+    .tint-line-dim { opacity: 0.45; }
+    .tint-line-lit { clip-path: inset(0 calc(100% - var(--tint-line-at, 0%)) 0 0); }
+    :scope[data-tint-state='playing'] .tint-controls:not([data-visible]):not(:has(:focus-visible)) .tint-line { opacity: 1; transition-delay: 250ms; }
+    @media (forced-colors: active) { .tint-line { display: none; } }
+
+    /* ---------- Light from the screen ---------- */
+
+    /* The frame's colours cast on the page: each edge's colour from its own side, the whole frame's colour all round,
+       and a little more below, as a screen lights the floor in front of it. --tint-amb-on fades it in and out. */
+    :scope[data-tint-ambient] {
+      --tint-amb-size: 64px;
+      overflow: visible;
+      box-shadow:
+        inset 0 0 0 1px var(--media-frame-border),
+        0 calc(var(--tint-amb-size) * -0.35) calc(var(--tint-amb-size) * 1.3) calc(var(--tint-amb-size) * -0.45) color-mix(in oklab, var(--tint-amb-t) calc(var(--tint-amb-on) * 75%), transparent),
+        calc(var(--tint-amb-size) * 0.55) 0 calc(var(--tint-amb-size) * 1.5) calc(var(--tint-amb-size) * -0.45) color-mix(in oklab, var(--tint-amb-r) calc(var(--tint-amb-on) * 80%), transparent),
+        0 calc(var(--tint-amb-size) * 0.6) calc(var(--tint-amb-size) * 1.8) calc(var(--tint-amb-size) * -0.35) color-mix(in oklab, var(--tint-amb-b) calc(var(--tint-amb-on) * 80%), transparent),
+        calc(var(--tint-amb-size) * -0.55) 0 calc(var(--tint-amb-size) * 1.5) calc(var(--tint-amb-size) * -0.45) color-mix(in oklab, var(--tint-amb-l) calc(var(--tint-amb-on) * 80%), transparent),
+        0 0 calc(var(--tint-amb-size) * 2.6) calc(var(--tint-amb-size) * -0.4) color-mix(in oklab, var(--tint-amb-c) calc(var(--tint-amb-on) * 32%), transparent);
+    }
+    /* With the light outside the box, everything inside keeps the player's rounded corners on its own. */
+    :scope[data-tint-ambient] > :is(video, mux-video, .media-poster) { border-radius: inherit; overflow: hidden; }
+    :scope[data-tint-ambient] :is(.tint-print, .tint-controls, .tint-indicators, .tint-dialog-backdrop) { border-radius: inherit; }
+    :scope[data-tint-ambient] :is(.tint-print, .tint-controls) { overflow: hidden; }
+    :scope[data-tint-ambient] .tint-scrim { border-radius: 0 0 var(--media-video-border-radius) var(--media-video-border-radius); }
+    :scope[data-tint-ambient]::before { border-radius: inherit; }
+    @media (prefers-contrast: more), (forced-colors: active) { :scope[data-tint-ambient] { box-shadow: inset 0 0 0 1px var(--media-frame-border); } }
+    :where([data-tint-contrast='more']) :scope[data-tint-ambient] { box-shadow: inset 0 0 0 1px var(--media-frame-border); }
+
+    /* ---------- Quiet: the colour without the theatre ---------- */
+
+    /* data-tint="quiet" on the player or any ancestor keeps the fingerprint, the tint, the preview and the colour line,
+       and leaves out the unpacking, the slit-scan, the end sheet and the light from the screen (see elements.ts). */
+    .tint-ambient { display: none; }
+    :where([data-tint='quiet']) .tint-scrub { display: none; }
+    :where([data-tint='quiet']) :scope[data-tint-ambient] { box-shadow: inset 0 0 0 1px var(--media-frame-border); }
 
     /* ---------- Slit-scan scrubbing ---------- */
 
