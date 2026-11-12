@@ -10,6 +10,7 @@ import {
   selectPlayback,
   selectTextTrack,
   selectTime,
+  selectVolume,
   UIElement,
   type PropertyValues,
 } from '@videojs/html';
@@ -841,7 +842,7 @@ export class TintTrackElement extends UIElement {
       '--tint-cuts',
       cuts.length
         ? `linear-gradient(to right, ${cuts
-            .map((c) => `#000 calc(${c}% - 1.5px), transparent calc(${c}% - 1.5px) calc(${c}% + 1.5px), #000 calc(${c}% + 1.5px)`)
+            .map((c) => `#000 calc(${c}% - 1px), transparent calc(${c}% - 1px) calc(${c}% + 1px), #000 calc(${c}% + 1px)`)
             .join(', ')})`
         : 'none'
     );
@@ -2642,6 +2643,418 @@ export class TintAmbientElement extends UIElement {
   }
 }
 
+/**
+ * <tint-level>: the volume as a wedge of bars in the film's colours, the film from start to end across the wedge.
+ * Bars up to the level are lit. Each bar is a small spring: moving the level kicks the bars it crosses (up as it rises,
+ * down as it falls), muting folds them flat one after another, and opening the slider raises them in a run. Drawn
+ * inside the slider's track, so Video.js keeps the pointer, keys and ARIA; the rolling number beside it is aria-hidden
+ * (the slider already says the value). Still with reduced motion.
+ */
+export class TintLevelElement extends UIElement {
+  static readonly tagName = 'tint-level';
+  static readonly BARS = 14;
+
+  #volume = new PlayerController(this, playerContext, selectVolume);
+  #model: TintModel | null = null;
+  #canvas = document.createElement('canvas');
+  #colors: string[] = [];
+  #bars = Array.from({ length: TintLevelElement.BARS }, () => ({ s: 1, v: 0, wait: 0, target: 1 }));
+  #level = -1;
+  #muted: boolean | null = null;
+  #raf = 0;
+  #last = 0;
+  #roller: Roller | null = null;
+  #disconnect: AbortController | null = null;
+  #resize: ResizeObserver | null = null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.setAttribute('aria-hidden', 'true');
+    this.replaceChildren(this.#canvas);
+    const container = containerOf(this);
+    if (!container) return;
+    this.#model = getModel(container);
+    this.#disconnect = new AbortController();
+    const { signal } = this.#disconnect;
+    this.#model.addEventListener('change', () => (this.#recolour(), this.#draw()), { signal });
+    // The bars stand up each time the slider opens (pointer or keyboard), not on every move inside it.
+    const group = this.closest<HTMLElement>('.tint-volume');
+    if (group) {
+      let open = false;
+      const enter = () => {
+        if (open) return;
+        open = true;
+        this.#rise();
+      };
+      const leave = (event: Event) => {
+        const next = (event as FocusEvent).relatedTarget;
+        if (next instanceof Node && group.contains(next)) return;
+        if (event.type === 'pointerleave' ? group.contains(document.activeElement) : group.matches(':hover')) return;
+        open = false;
+      };
+      group.addEventListener('pointerenter', enter, { signal });
+      group.addEventListener('focusin', enter, { signal });
+      group.addEventListener('pointerleave', leave, { signal });
+      group.addEventListener('focusout', leave, { signal });
+    }
+    this.#resize = new ResizeObserver(() => this.#draw());
+    this.#resize.observe(this);
+    this.#recolour();
+    this.setAttribute('data-ready', '');
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#disconnect?.abort();
+    this.#resize?.disconnect();
+    cancelAnimationFrame(this.#raf);
+    this.#raf = 0;
+  }
+
+  protected override update(changed: PropertyValues): void {
+    super.update(changed);
+    const v = this.#volume.value;
+    if (!v) return;
+    const level = v.muted ? 0 : clamp(v.volume, 0, 1);
+    const calm = reducedMotion(this);
+    const N = TintLevelElement.BARS;
+    const before = this.#level;
+    if (this.#muted === null) {
+      for (const b of this.#bars) b.s = b.target = v.muted ? TintLevelElement.FLAT : 1;
+    } else if (v.muted !== this.#muted) {
+      // Muting lays the bars down from the loud end back; unmuting stands them up from the quiet end.
+      this.#bars.forEach((b, i) => {
+        b.wait = (v.muted ? N - 1 - i : i) * 0.022;
+        b.target = v.muted ? TintLevelElement.FLAT : 1;
+      });
+    } else if (before >= 0 && level !== before) {
+      // The bars the level passes jump: up as it rises, down as it falls.
+      const [a, z] = level > before ? [before, level] : [level, before];
+      this.#bars.forEach((b, i) => {
+        const c = (i + 0.5) / N;
+        if (c >= a && c <= z) b.v += level > before ? 7 : -5;
+      });
+    }
+    this.#muted = v.muted;
+    this.#level = level;
+    this.#number(Math.round(level * 100), level >= before);
+    if (calm) for (const b of this.#bars) ((b.s = b.target), (b.v = 0), (b.wait = 0));
+    this.#run();
+  }
+
+  /** How low the bars lie while muted: a row of dashes. */
+  static readonly FLAT = 0.14;
+
+  #number(value: number, forward: boolean): void {
+    const el = this.closest('.tint-volume')?.querySelector<HTMLElement>('.tint-volume-num');
+    if (!el) return;
+    if (!this.#roller || this.#roller.el !== el) this.#roller = new Roller(el);
+    this.#roller.set(String(value), forward);
+  }
+
+  /** The slider opening: the bars stand up one after another, quiet end first. */
+  #rise(): void {
+    if (reducedMotion(this) || this.#muted) return;
+    this.#bars.forEach((b, i) => {
+      b.s = TintLevelElement.FLAT;
+      b.v = 0;
+      b.wait = i * 0.018;
+      b.target = 1;
+    });
+    this.#run();
+  }
+
+  /**
+   * The film from start to end, one colour per bar: the accent of the frame at that point, the same colour the controls
+   * take when you get there (raw frame colours are too dark at the size of a bar). The current accent until it is ready.
+   */
+  #recolour(): void {
+    const N = TintLevelElement.BARS;
+    const model = this.#model;
+    if (model?.status === 'ready' && model.duration) {
+      this.#colors = Array.from({ length: N }, (_, i) => accentCss(model, model.frameAt(((i + 0.5) / N) * model.duration)));
+      return;
+    }
+    const accent = getComputedStyle(this).getPropertyValue('--tint-accent').trim() || '#fff';
+    this.#colors = Array.from({ length: N }, () => accent);
+  }
+
+  #run(): void {
+    if (this.#raf || !this.isConnected) return this.#draw();
+    this.#last = performance.now();
+    this.#raf = requestAnimationFrame(this.#frame);
+  }
+
+  #frame = (now: number): void => {
+    this.#raf = 0;
+    const dt = Math.min(0.05, (now - this.#last) / 1000);
+    this.#last = now;
+    let moving = false;
+    for (const b of this.#bars) {
+      if (b.wait > 0) {
+        b.wait -= dt;
+        moving = true;
+        continue;
+      }
+      // A stiff, lightly damped spring: one clear bounce, settled in about a third of a second.
+      const k = 420;
+      const d = 15;
+      b.v += (-k * (b.s - b.target) - d * b.v) * dt;
+      b.s += b.v * dt;
+      if (Math.abs(b.v) > 0.01 || Math.abs(b.s - b.target) > 0.002) moving = true;
+      else ((b.s = b.target), (b.v = 0));
+    }
+    this.#draw();
+    if (moving) this.#raf = requestAnimationFrame(this.#frame);
+  };
+
+  #draw(): void {
+    const r = this.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const k = dpr();
+    const W = Math.round(r.width * k);
+    const H = Math.round(r.height * k);
+    const c = this.#canvas;
+    if (c.width !== W || c.height !== H) ((c.width = W), (c.height = H));
+    const g = c.getContext('2d')!;
+    g.clearRect(0, 0, W, H);
+    const N = TintLevelElement.BARS;
+    const gap = Math.max(1, Math.round(2 * k));
+    const bw = (W - gap * (N - 1)) / N;
+    // Still opening: too narrow for bars yet.
+    if (bw < 1) return;
+    // Lit to the level the slider shows (none while muted).
+    const litTo = Math.max(0, this.#level) * W;
+    for (let i = 0; i < N; i++) {
+      const b = this.#bars[i]!;
+      // The wedge: quiet bars short, loud bars tall. A spring above 1 stretches a bar past its place, then back.
+      const base = H * 0.78 * (0.3 + (0.7 * (i + 1)) / N);
+      const h = clamp(base * b.s, 1.5 * k, H);
+      const x = i * (bw + gap);
+      const y = H - h;
+      g.fillStyle = 'rgb(255 255 255 / 0.2)';
+      g.beginPath();
+      g.roundRect(x, y, bw, h, Math.min(bw / 2, 1.5 * k));
+      g.fill();
+      if (x < litTo) {
+        g.save();
+        g.beginPath();
+        g.rect(0, 0, litTo, H);
+        g.clip();
+        g.fillStyle = this.#colors[i] ?? '#fff';
+        g.beginPath();
+        g.roundRect(x, y, bw, h, Math.min(bw / 2, 1.5 * k));
+        g.fill();
+        g.restore();
+      }
+    }
+  }
+}
+
+/**
+ * <tint-cues>: subtitles set like a film's. The words come in one after another, sound descriptions such as
+ * "(thunder rumbling)" are set apart as small capitals in the scene's colour, and when the film is letterboxed the line
+ * sits in the black bar under the picture, the way cinemas project subtitles, moving up over the picture only when it
+ * doesn't fit or the controls need the room.
+ *
+ * Reads the showing subtitles track of the player's <video> (inside a media component's shadow root too), keeps the
+ * track showing so the captions button and menu stay true, and hides the browser's own rendering of it. With forced
+ * colours it does nothing, and the browser's captions (which follow the system's caption settings) show as usual.
+ */
+export class TintCuesElement extends UIElement {
+  static readonly tagName = 'tint-cues';
+  static #hideNative: CSSStyleSheet | null = null;
+
+  #tracks = new PlayerController(this, playerContext, selectTextTrack);
+  #container: HTMLElement | null = null;
+  #video: HTMLVideoElement | null = null;
+  #track: TextTrack | null = null;
+  #root: ShadowRoot | null = null;
+  #text = '';
+  #line: HTMLElement | null = null;
+  #disconnect: AbortController | null = null;
+  #listen: AbortController | null = null;
+  #resize: ResizeObserver | null = null;
+  #watch: MutationObserver | null = null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.setAttribute('aria-hidden', 'true');
+    this.#container = containerOf(this);
+    if (!this.#container) return;
+    this.#disconnect = new AbortController();
+    this.#resize = new ResizeObserver(() => this.#place());
+    this.#resize.observe(this.#container);
+    // The controls showing or hiding moves the line out of their way.
+    this.#watch = new MutationObserver(() => this.#place());
+    this.#watch.observe(this.#container, { attributes: true, attributeFilter: ['data-controls-visible', 'data-tint-state'] });
+    this.#bind();
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#disconnect?.abort();
+    this.#listen?.abort();
+    this.#resize?.disconnect();
+    this.#watch?.disconnect();
+    this.#native(true);
+  }
+
+  protected override update(changed: PropertyValues): void {
+    super.update(changed);
+    // Turning subtitles on or off, or picking another language, updates the store first.
+    if (this.#tracks.value) this.#bind();
+  }
+
+  /** Follow the showing subtitles track of the current <video>. */
+  #bind = (): void => {
+    const c = this.#container;
+    if (!c) return;
+    const video = videoOf(c);
+    if (video !== this.#video) {
+      this.#listen?.abort();
+      this.#listen = new AbortController();
+      this.#video = video;
+      this.#track = null;
+      if (video) {
+        const { signal } = this.#listen;
+        video.textTracks.addEventListener('change', this.#bind, { signal });
+        video.textTracks.addEventListener('addtrack', this.#bind, { signal });
+        video.addEventListener('resize', () => this.#place(), { signal });
+        video.addEventListener('loadedmetadata', () => this.#place(), { signal });
+      }
+    }
+    const forced = matchMedia('(forced-colors: active)').matches;
+    const track =
+      !forced && video ? ([...video.textTracks].find((t) => (t.kind === 'subtitles' || t.kind === 'captions') && t.mode === 'showing') ?? null) : null;
+    if (track === this.#track) return;
+    this.#track?.removeEventListener('cuechange', this.#onCue);
+    this.#track = track;
+    track?.addEventListener('cuechange', this.#onCue);
+    this.#native(!track);
+    c.toggleAttribute('data-tint-cues', Boolean(track));
+    this.#onCue();
+  };
+
+  /** Show or hide the browser's own rendering of the captions. */
+  #native(show: boolean): void {
+    const root = this.#video?.getRootNode();
+    const shadow = root instanceof ShadowRoot ? root : null;
+    if (!show && shadow && shadow !== this.#root) {
+      TintCuesElement.#hideNative ??= (() => {
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(
+          'video::cue{color:transparent!important;background:transparent!important;text-shadow:none!important;outline:none!important}' +
+            'video::-webkit-media-text-track-container{opacity:0!important}'
+        );
+        return sheet;
+      })();
+      this.#unhide();
+      shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, TintCuesElement.#hideNative];
+      this.#root = shadow;
+    } else if (show) this.#unhide();
+  }
+
+  #unhide(): void {
+    const sheet = TintCuesElement.#hideNative;
+    if (this.#root && sheet) this.#root.adoptedStyleSheets = this.#root.adoptedStyleSheets.filter((s) => s !== sheet);
+    this.#root = null;
+  }
+
+  #onCue = (): void => {
+    const cues = this.#track?.activeCues ? [...this.#track.activeCues] : [];
+    const text = cues
+      .map((cue) => cleanCue((cue as VTTCue).text ?? ''))
+      .filter(Boolean)
+      .join('\n');
+    if (text === this.#text) return;
+    this.#text = text;
+    const calm = reducedMotion(this);
+    const old = this.#line;
+    if (old) {
+      old.setAttribute('data-state', 'out');
+      window.setTimeout(() => old.remove(), calm ? 0 : 180);
+    }
+    this.#line = null;
+    if (!text) return;
+    const line = document.createElement('div');
+    line.className = 'tint-cue';
+    let word = 0;
+    for (const raw of text.split('\n')) {
+      const row = document.createElement('span');
+      const sound = /^[([♪].*[)\]♪]$/.test(raw.trim());
+      row.className = sound ? 'tint-cue-row tint-cue-sound' : 'tint-cue-row';
+      const words = (sound ? raw.trim().replace(/^[([♪]\s*|\s*[)\]♪]$/g, '') : raw).split(/\s+/).filter(Boolean);
+      for (const w of words) {
+        const span = document.createElement('span');
+        span.className = 'tint-cue-word';
+        span.textContent = w;
+        span.style.setProperty('--i', String(word++));
+        row.append(span, document.createTextNode(' '));
+      }
+      line.append(row);
+    }
+    // The words arrive faster on a long line, so the last one is in by about a third of a second.
+    line.style.setProperty('--tint-cue-step', `${Math.round(Math.min(32, 320 / Math.max(1, word)))}ms`);
+    this.append(line);
+    this.#line = line;
+    this.#place();
+  };
+
+  /** In the letterbox under the picture when the line fits there, above the controls or the picture's foot when not. */
+  #place(): void {
+    const c = this.#container;
+    if (!c) return;
+    const W = c.clientWidth;
+    const H = c.clientHeight;
+    if (!W || !H) return;
+    const v = this.#video;
+    const aspect = v?.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : W / H;
+    const pic = pictureBox(c, W, H, aspect);
+    const below = Math.max(0, H - (pic.y + pic.h));
+    const controls = c.hasAttribute('data-controls-visible');
+    const bar = controls ? parseFloat(getComputedStyle(c).getPropertyValue('--tint-bar-h')) || 0 : 0;
+    const h = this.#line?.offsetHeight ?? 0;
+    const pad = Math.max(8, H * 0.03);
+    const room = below - bar;
+    const inBar = h > 0 && room >= h + 8;
+    let y = inBar ? bar + (room - h) / 2 : Math.max(bar + pad * 0.5, below + pad);
+    // On a small picture the line can land on the transport in the middle; then it moves into the gap between the
+    // transport and the bar, or failing that the room above the transport.
+    // With no room at all (a phone-sized picture under a two-row bar) the line steps aside until the controls go.
+    const disc = controls ? c.querySelector('.tint-transport .tint-play')?.getBoundingClientRect() : undefined;
+    let covered = false;
+    if (disc?.height && h) {
+      const top = c.getBoundingClientRect().top;
+      const tTop = disc.top - top;
+      const tBottom = disc.bottom - top;
+      const cueTop = H - y - h;
+      if (cueTop < tBottom + 4 && H - y > tTop - 4) {
+        const gap = H - bar - tBottom;
+        if (gap >= h + 8) y = bar + (gap - h) / 2;
+        else if (tTop >= h + 8) y = H - (tTop - h) / 2 - h;
+        else covered = true;
+      }
+    }
+    this.toggleAttribute('data-covered', covered);
+    this.style.setProperty('--tint-cue-y', `${Math.round(y)}px`);
+    this.style.setProperty('--tint-cue-w', `${Math.round(pic.w)}px`);
+    this.toggleAttribute('data-letterbox', inBar);
+  }
+}
+
+/** A cue's words without WebVTT markup: tags dropped, the common entities decoded. */
+function cleanCue(text: string): string {
+  return text
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&lrm;|&rlm;/g, '')
+    .replace(/&amp;/g, '&')
+    .trim();
+}
+
 /** A frame's colour as light: hue kept, saturation raised, lightness held in a band that glows on a dark page. */
 function light(r: number, g: number, b: number): string {
   const R = r / 255;
@@ -2662,7 +3075,7 @@ function light(r: number, g: number, b: number): string {
 }
 
 export function defineTintElements(): void {
-  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement, TintPauseElement, TintScrubElement, TintContactElement, TintTransportElement, TintReelElement, TintLineElement, TintAmbientElement]) {
+  for (const element of [TintPrintElement, TintTrackElement, TintBloomElement, TintSceneCountElement, TintScenesElement, TintPauseElement, TintScrubElement, TintContactElement, TintTransportElement, TintReelElement, TintLineElement, TintAmbientElement, TintLevelElement, TintCuesElement]) {
     if (!customElements.get(element.tagName)) customElements.define(element.tagName, element);
   }
 }

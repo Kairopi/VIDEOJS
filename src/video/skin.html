@@ -42,6 +42,8 @@
 <media-dialog-close class="tint-pill tint-dialog-close"></media-dialog-close>
 </media-dialog-popup>
 </media-error-dialog>
+<!-- Subtitles, set like a film's: in the letterbox when there is one, the words arriving one after another. -->
+<tint-cues class="tint-cues"></tint-cues>
 <media-controls>
 <media-controls-backdrop class="tint-scrim"></media-controls-backdrop>
 <media-controls-content class="tint-controls">
@@ -90,10 +92,13 @@
 </media-tooltip>
 <media-volume-slider class="tint-volume-slider" orientation="horizontal" thumb-alignment="edge">
 <media-slider-track class="tint-volume-track">
+<!-- The volume as a wedge of bars in the film's colours. -->
+<tint-level class="tint-level"></tint-level>
 <media-slider-fill class="tint-volume-fill"></media-slider-fill>
 </media-slider-track>
 <media-slider-thumb class="tint-volume-thumb"></media-slider-thumb>
 </media-volume-slider>
+<span class="tint-volume-num" aria-hidden="true"></span>
 </div>
 </media-controls-group>
 <media-time-slider class="tint-timeline" thumb-alignment="center">

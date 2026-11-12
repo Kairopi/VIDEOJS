@@ -59,6 +59,8 @@
 
     --tint-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
     --tint-ease-fold: cubic-bezier(0.32, 0.72, 0, 1);
+    /* A spring: past the target, a smaller swing back, home. For the bar's presses and lights. */
+    --tint-spring: linear(0, 0.42 9%, 0.86 18%, 1.08 27%, 1.13 34%, 1.07 43%, 0.99 55%, 0.98 66%, 1.005 80%, 1);
     --tint-duration-press: 90ms;
     --tint-duration-fast: 140ms;
     --tint-duration: 200ms;
@@ -648,10 +650,14 @@
       border-radius: calc(var(--tint-track-rest) / 2);
       background: linear-gradient(to right, var(--tint-accent) var(--media-slider-fill, 0%), oklch(1 0 0 / 0.26) var(--media-slider-fill, 0%));
       box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.08);
+    }
+    :scope[data-tint-ready] .tint-track { background: oklch(0.1 0.015 var(--tint-h)); }
+    /* Scene cuts show as hairline breaks only while you point at or drag the strip, where they help you land on a
+       scene; at rest the strip is one unbroken film. */
+    .tint-timeline:is([data-pointing], [data-dragging]) .tint-track {
       -webkit-mask-image: var(--tint-cuts, none);
       mask-image: var(--tint-cuts, none);
     }
-    :scope[data-tint-ready] .tint-track { background: oklch(0.1 0.015 var(--tint-h)); }
 
     /* Point at it and the strip opens; paused, it stays half open, so stopping shows the film's colours. */
     .tint-timeline:is([data-pointing], [data-dragging], :focus-within) .tint-track {
@@ -851,28 +857,21 @@
       gap: calc(var(--media-spacing) * 2);
       min-height: var(--tint-strip);
     }
-    /* Two small glass groups, tinted by the scene, playback on one side and the rest on the other. */
+    /* No boxes: the buttons stand straight on the picture's own shade (the scrim, tinted by the frame under it), so
+       the bar reads as part of the film rather than a panel laid over it. */
     .tint-group {
       display: flex;
       flex: none;
       align-items: center;
-      gap: 2px;
+      gap: 0;
       min-width: 0;
       height: var(--tint-strip);
-      padding: calc(var(--media-spacing) * 0.5);
-      border-radius: var(--tint-radius-group);
-      background: oklch(0.2 calc(var(--tint-c, 0) * 0.3) var(--tint-h) / 0.52);
-      box-shadow:
-        inset 0 0 0 1px oklch(1 0 0 / 0.09),
-        inset 0 1px 0 oklch(1 0 0 / 0.1),
-        0 10px 28px rgb(0 0 0 / 0.28);
-      -webkit-backdrop-filter: blur(20px) saturate(1.5);
-      backdrop-filter: blur(20px) saturate(1.5);
     }
+    /* More contrast or less transparency: the groups get a solid backing again. */
     @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-      .tint-group { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--tint-surface); }
+      .tint-group { padding: calc(var(--media-spacing) * 0.5); border-radius: var(--tint-radius-group); background: var(--tint-surface); }
     }
-    :where([data-tint-contrast='more']) .tint-group { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--tint-surface); }
+    :where([data-tint-contrast='more']) .tint-group { padding: calc(var(--media-spacing) * 0.5); border-radius: var(--tint-radius-group); background: var(--tint-surface); }
     @media (forced-colors: active) { .tint-group { border: 1px solid CanvasText; } }
 
     /* Narrow players: the strip gets the full width on top, the two groups sit under it at either side. */
@@ -908,6 +907,52 @@
     /* Casting buttons only appear once a device can be reached. */
     :is(.tint-airplay, .tint-cast):is([data-disabled], [data-availability='unavailable']) { display: none; }
     .tint-button:is(:disabled, [aria-disabled='true']) { opacity: 0.4; cursor: default; }
+
+    /* The bar's buttons: round, bare on the shade. Pointing one lights a lens of the scene's colour behind it; pressing
+       squashes the icon, and letting go springs it back past its size and home, like the reels in the middle. A small
+       light under captions, picture in picture and fullscreen says they are on. */
+    .tint-bar .tint-button {
+      border-radius: 50%;
+      background: radial-gradient(closest-side, oklch(from var(--tint-accent) l c h / 0.34), oklch(from var(--tint-accent) l c h / 0.12) 62%, transparent) no-repeat center / 0% 0%;
+      transition:
+        background-size 260ms var(--tint-ease-out),
+        color var(--tint-duration-fast) ease;
+    }
+    .tint-bar .tint-button:active { scale: 1; }
+    @media (hover: hover) {
+      .tint-bar .tint-button:hover { background-color: transparent; background-size: 100% 100%; color: color-mix(in oklab, var(--tint-accent) 30%, #fff); }
+    }
+    .tint-bar .tint-button[aria-expanded='true'] { background-color: transparent; background-size: 100% 100%; }
+    .tint-bar .tint-button .tint-icon {
+      filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.55));
+      transition:
+        opacity var(--tint-duration-fast) ease,
+        scale 560ms var(--tint-spring),
+        translate 560ms var(--tint-spring);
+    }
+    .tint-bar .tint-button:active .tint-icon { scale: 1.16 0.8; translate: 0 1px; transition-duration: 90ms, 90ms, 90ms; transition-timing-function: ease, ease-out, ease-out; }
+    .tint-bar .tint-button::after {
+      content: '';
+      position: absolute;
+      bottom: calc(var(--media-spacing) * 0.75);
+      left: 50%;
+      width: 4px;
+      height: 4px;
+      translate: -50% 0;
+      border-radius: 50%;
+      background: var(--tint-accent);
+      box-shadow: 0 0 6px var(--tint-accent);
+      scale: 0;
+      transition: scale 420ms var(--tint-spring);
+    }
+    .tint-bar :is(.tint-captions[data-active], .tint-pip[data-pip], .tint-fullscreen[data-fullscreen])::after { scale: 1; }
+    @media (prefers-reduced-motion: reduce) {
+      .tint-bar .tint-button .tint-icon { transition: opacity var(--tint-duration-fast) ease; }
+      .tint-bar .tint-button:active .tint-icon { scale: 1; translate: none; }
+    }
+    :where([data-tint-motion='reduce']) .tint-bar .tint-button .tint-icon { transition: opacity var(--tint-duration-fast) ease; }
+    :where([data-tint-motion='reduce']) .tint-bar .tint-button:active .tint-icon { scale: 1; translate: none; }
+    @media (forced-colors: active) { .tint-bar .tint-button { background: ButtonFace; } .tint-bar .tint-button::after { background: Highlight; box-shadow: none; } }
 
     /* One focus style everywhere: accent ring with a dark halo, readable over any frame. */
     :is(.tint-button, .tint-menu-item, .tint-menu-back, .tint-menu-radio, .tint-scene-item, .tint-volume-thumb):focus-visible {
@@ -970,39 +1015,72 @@
     }
     .tint-volume:is(:hover, :focus-within) .tint-volume-slider,
     .tint-volume-slider[data-dragging] {
-      width: calc(var(--media-spacing) * 22);
-      margin-inline: calc(var(--media-spacing) * 1) calc(var(--media-spacing) * 2.5);
+      width: calc(var(--media-spacing) * 24);
+      margin-inline: calc(var(--media-spacing) * 1.5) calc(var(--media-spacing) * 1);
       opacity: 1;
     }
     .tint-volume-slider[data-hidden] { display: none; }
+    /* The wedge: a row of bars in the film's colours, short to tall, lit up to the level (tint-level). */
     .tint-volume-track {
       position: absolute;
       inset-inline: 0;
-      height: 4px;
-      overflow: hidden;
-      border-radius: 2px;
-      background: oklch(1 0 0 / 0.28);
+      height: calc(var(--media-spacing) * 6);
     }
+    .tint-level { position: absolute; inset: 0; display: block; }
+    .tint-level canvas { display: block; width: 100%; height: 100%; }
+    /* Without the wedge (no script yet, forced colours): a plain line. */
     .tint-volume-fill {
       position: absolute;
-      inset-block: 0;
+      bottom: 0;
       left: 0;
       width: var(--media-slider-fill, 0%);
+      height: 3px;
+      border-radius: 2px;
       background: var(--tint-accent);
     }
+    .tint-volume-track:has(.tint-level[data-ready]) .tint-volume-fill { display: none; }
+    /* The thumb is a slim upright mark at the level, like the playhead on the reel; it grows while held. */
     .tint-volume-thumb {
       position: absolute;
       top: 50%;
       left: var(--media-slider-fill, 0%);
-      width: 14px;
-      height: 14px;
+      width: 3px;
+      height: calc(var(--media-spacing) * 7);
       translate: -50% -50%;
-      border-radius: 50%;
+      border-radius: 2px;
       background: #fff;
-      box-shadow: 0 0 0 1px rgb(0 0 0 / 0.4), 0 1px 4px rgb(0 0 0 / 0.4);
+      box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 1px 6px rgb(0 0 0 / 0.5);
       outline: none;
+      transition: height var(--tint-duration-fast) var(--tint-ease-out), width var(--tint-duration-fast) var(--tint-ease-out);
     }
-    @media (hover: none) { .tint-volume-slider { display: none; } }
+    .tint-volume-slider[data-dragging] .tint-volume-thumb { width: 4px; height: calc(var(--media-spacing) * 8); }
+    .tint-volume-thumb:focus-visible { outline-offset: 3px; }
+    /* The level as a rolling number, beside the wedge while it is open. */
+    .tint-volume-num {
+      display: inline-flex;
+      justify-content: end;
+      width: 0;
+      overflow: hidden;
+      color: var(--tint-ink-2);
+      font-size: calc(var(--media-spacing) * 3.1);
+      font-weight: 560;
+      font-variant-numeric: tabular-nums;
+      opacity: 0;
+      transition: width var(--tint-duration) var(--tint-ease-out), opacity var(--tint-duration-fast) ease, margin var(--tint-duration) var(--tint-ease-out);
+    }
+    .tint-volume:is(:hover, :focus-within) .tint-volume-num,
+    .tint-volume:has([data-dragging]) .tint-volume-num {
+      width: 3ch;
+      margin-inline-end: calc(var(--media-spacing) * 2);
+      opacity: 1;
+    }
+    .tint-volume:has(.tint-volume-slider[data-dragging]) .tint-volume-num { color: var(--tint-ink); }
+    .tint-volume:has(.tint-mute[data-muted]) .tint-volume-num { opacity: 0.4; }
+    @media (forced-colors: active) {
+      .tint-level { display: none; }
+      .tint-volume-fill { display: block !important; background: Highlight; forced-color-adjust: none; }
+    }
+    @media (hover: none) { .tint-volume-slider, .tint-volume-num { display: none; } }
 
     /* Time, set slightly wide with fixed-width digits so it never shifts. */
     .tint-time {
@@ -1747,6 +1825,19 @@
     @media (prefers-contrast: more), (forced-colors: active) { :scope[data-tint-ambient] { box-shadow: inset 0 0 0 1px var(--media-frame-border); } }
     :where([data-tint-contrast='more']) :scope[data-tint-ambient] { box-shadow: inset 0 0 0 1px var(--media-frame-border); }
 
+    /* ---------- Fullscreen: the screen is the frame ---------- */
+
+    /* No rounded corners, no hairline border, no light cast past the edges (there is no page to light), and no colour
+       line at rest: in fullscreen nothing but the film is left on the screen once the controls go. */
+    :scope:fullscreen,
+    :scope[data-tint-ambient]:fullscreen {
+      --media-video-border-radius: 0px;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    :scope:fullscreen .tint-line { display: none; }
+    :scope:fullscreen .tint-scrim { border-radius: 0; }
+
     /* ---------- Quiet: the colour without the theatre ---------- */
 
     /* data-tint="quiet" on the player or any ancestor keeps the fingerprint, the tint, the preview and the colour line,
@@ -1969,7 +2060,8 @@
   }
 }
 
-/* Captions: Mona Sans on a soft box, lifted above the controls while they show. */
+/* Captions the browser draws (forced colours, or before tint-cues is running): Mona Sans on a soft box, lifted above
+   the controls while they show. */
 @layer components {
   .media-skin[data-theme='tint'] {
     --media-caption-controls-y: calc(var(--media-spacing) * -22);
@@ -1980,4 +2072,107 @@
     font-family: var(--media-font-family, 'Mona Sans', ui-sans-serif, system-ui, sans-serif);
     font-weight: 520;
   }
+  /* tint-cues draws them instead: a <video> right in the player has its own rendering hidden here (one inside a media
+     component's shadow root is hidden by the element). */
+  .media-skin[data-theme='tint'][data-tint-cues] > video::cue {
+    color: transparent;
+    background: transparent;
+    text-shadow: none;
+  }
+}
+
+/* ---------------------------------------------------------------- Subtitles (tint-cues) */
+
+@layer components {
+  @scope (.media-skin[data-theme='tint'][data-preset='video']) {
+    /* Set in the display serif, white, centred under the picture. In the letterbox they need no backing; over the
+       picture a soft pool of the scene's darkest colour sits behind the words, so they read over any frame without a
+       box. */
+    .tint-cues {
+      position: absolute;
+      inset-inline: 0;
+      bottom: var(--tint-cue-y, 8%);
+      z-index: 10;
+      display: grid;
+      justify-items: center;
+      pointer-events: none;
+      transition: bottom var(--media-duration-controls, 200ms) var(--tint-ease-out);
+    }
+    .tint-cue {
+      grid-area: 1 / 1;
+      display: grid;
+      justify-items: center;
+      gap: 0.12em;
+      /* About forty characters a line, as film subtitles are set, so a long line breaks into two balanced ones. */
+      max-width: min(92%, var(--tint-cue-w, 100%), 22em);
+      padding: 0.3em 1.1em 0.36em;
+      color: oklch(0.985 0.008 var(--tint-h));
+      font-family: var(--tint-font-display, 'Instrument Serif', Georgia, serif);
+      font-size: clamp(17px, 2.65cqi, 46px);
+      font-weight: 400;
+      line-height: 1.12;
+      letter-spacing: 0.005em;
+      text-align: center;
+      text-wrap: balance;
+      text-shadow: 0 1px 2px rgb(0 0 0 / 0.9), 0 0 18px rgb(0 0 0 / 0.55);
+      /* Fades to nothing exactly at the box's edges, so the pool has no edge of its own. */
+      background: radial-gradient(closest-side, oklch(0.1 0.025 var(--tint-h) / 0.66), oklch(0.1 0.025 var(--tint-h) / 0.4) 55%, transparent);
+      transition: opacity 240ms ease, translate 260ms var(--tint-ease-out), filter 240ms ease;
+    }
+    .tint-cues[data-letterbox] .tint-cue { background: none; text-shadow: none; }
+    .tint-cues[data-covered] { opacity: 0; }
+    .tint-cues { transition: bottom var(--media-duration-controls, 200ms) var(--tint-ease-out), opacity var(--media-duration-controls, 200ms) ease; }
+    .tint-cue[data-state='out'] { opacity: 0; translate: 0 -0.25em; filter: blur(2px); transition-duration: 150ms; }
+    .tint-cue-row { display: block; }
+    /* Each word arrives a moment after the one before it, rising out of a soft focus. */
+    .tint-cue-word {
+      display: inline-block;
+      animation: tint-cue-word 420ms var(--tint-ease-out) both;
+      /* After the line before it has gone. */
+      animation-delay: calc(110ms + var(--i, 0) * var(--tint-cue-step, 28ms));
+    }
+    /* A sound, not a line: "(thunder rumbling)" as small capitals in the scene's colour, between two hairlines. */
+    .tint-cue-sound {
+      display: flex;
+      align-items: center;
+      gap: 0.7em;
+      color: color-mix(in oklab, var(--tint-accent) 70%, #fff);
+      font-family: var(--media-font-family, 'Mona Sans', ui-sans-serif, system-ui, sans-serif);
+      font-size: 0.42em;
+      font-weight: 620;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      line-height: 1.6;
+    }
+    .tint-cue-sound::before,
+    .tint-cue-sound::after {
+      content: '';
+      width: 1.8em;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.7;
+    }
+    .tint-cue-sound .tint-cue-word + .tint-cue-word { margin-inline-start: 0.1em; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .tint-cue-word { animation: none; }
+      .tint-cue, .tint-cues { transition: none; }
+    }
+    :where([data-tint-motion='reduce']) .tint-cue-word { animation: none; }
+    :where([data-tint-motion='reduce']) :is(.tint-cue, .tint-cues) { transition: none; }
+    /* More contrast: a solid box, the way broadcast captions are set. */
+    @media (prefers-contrast: more) {
+      .tint-cue, .tint-cues[data-letterbox] .tint-cue { background: #000; text-shadow: none; border-radius: 4px; }
+      .tint-cue-sound { color: #fff; }
+    }
+    :where([data-tint-contrast='more']) :is(.tint-cue, .tint-cues[data-letterbox] .tint-cue) { background: #000; text-shadow: none; border-radius: 4px; }
+    :where([data-tint-contrast='more']) .tint-cue-sound { color: #fff; }
+    /* The poster, the unpacking and the end sheet have the stage to themselves. */
+    :scope:not([data-tint-state='playing']) .tint-cues { display: none; }
+  }
+}
+
+@keyframes tint-cue-word {
+  from { opacity: 0; translate: 0 0.3em; filter: blur(4px); }
+  to { opacity: 1; translate: 0 0; filter: blur(0); }
 }

@@ -179,6 +179,8 @@ html { transition: background-color 1.2s ease; }
 }
 /* Without its own light the screen gets a quiet edge and a shadow instead. */
 .player .media-skin:not([data-tint-ambient]) { box-shadow: 0 0 0 1px var(--hair), 0 50px 140px -50px rgb(0 0 0 / 0.9); }
+/* Fullscreen: the screen is the frame, so no corners, edge or shadow. */
+.player .media-skin:fullscreen { border-radius: 0; box-shadow: none; }
 
 /* Under the screen: a small heading row, then the four films with room between them. As wide as the screen. */
 .shelf {
